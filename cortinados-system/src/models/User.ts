@@ -1,3 +1,4 @@
+// Arquivo: /src/models/User.ts (ATUALIZAR)
 import mongoose, { Schema, Document, Model } from 'mongoose';
 import bcrypt from 'bcryptjs';
 import { User as IUser, UserRole } from '@/types';
@@ -70,10 +71,14 @@ const UserSchema = new Schema<UserDocument>({
     trim: true,
     validate: {
       validator: function(v: string) {
-        // Regex para telefone brasileiro (opcional)
-        return !v || /^(\+55\s?)?(\(?\d{2}\)?[\s-]?)(\d{4,5}[\s-]?\d{4})$/.test(v);
+        // Se não forneceu telefone, é válido (campo opcional)
+        if (!v) return true;
+        
+        // Regex para telefone português
+        // Aceita: +351 912345678, +351912345678, 912345678, 21234567 (fixo)
+        return /^(\+351\s?)?([29]\d{8})$/.test(v.replace(/\s/g, ''));
       },
-      message: 'Telefone inválido'
+      message: 'Telefone inválido para Portugal. Use formato: +351 912345678 ou 912345678'
     }
   },
   
@@ -89,7 +94,7 @@ const UserSchema = new Schema<UserDocument>({
   }
 });
 
-// Índices para melhor performance (removendo duplicados)
+// Índices para melhor performance
 UserSchema.index({ role: 1 });
 UserSchema.index({ ativo: 1 });
 

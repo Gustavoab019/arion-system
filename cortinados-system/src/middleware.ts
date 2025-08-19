@@ -1,4 +1,4 @@
-// Arquivo: /src/middleware.ts
+// Arquivo: /src/middleware.ts (ATUALIZAR)
 import { withAuth } from 'next-auth/middleware';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
@@ -10,17 +10,18 @@ const ROLE_ROUTES: Record<string, UserRole[]> = {
   '/dashboard': ['medidor', 'fabrica_trk', 'fabrica_crt', 'logistica', 'instalador', 'gestor'],
   
   // Rotas específicas por função
-  '/medicao': ['medidor', 'gestor'],
-  '/producao/calhas': ['fabrica_trk', 'gestor'],
-  '/producao/cortinas': ['fabrica_crt', 'gestor'],
-  '/logistica': ['logistica', 'gestor'],
-  '/instalacao': ['instalador', 'gestor'],
+  '/dashboard/medicao': ['medidor', 'gestor'],
+  '/dashboard/producao': ['fabrica_trk', 'fabrica_crt', 'gestor'],
+  '/dashboard/producao/calhas': ['fabrica_trk', 'gestor'],
+  '/dashboard/producao/cortinas': ['fabrica_crt', 'gestor'],
+  '/dashboard/logistica': ['logistica', 'gestor'],
+  '/dashboard/instalacao': ['instalador', 'gestor'],
   
   // Gestão - apenas gestores
-  '/admin': ['gestor'],
-  '/usuarios': ['gestor'],
-  '/relatorios': ['gestor'],
-  '/configuracoes': ['gestor']
+  '/dashboard/relatorios': ['gestor'],
+  '/dashboard/usuarios': ['gestor'],
+  '/dashboard/projetos': ['gestor'],
+  '/dashboard/configuracoes': ['gestor']
 };
 
 // Middleware personalizado que usa NextAuth
@@ -52,16 +53,11 @@ export default withAuth(
       }
     }
 
-    // Redirecionamentos especiais baseados no role
-    if (pathname === '/dashboard') {
-      const userRole = token?.role as UserRole;
-      const redirectPath = getDefaultDashboard(userRole);
-      
-      if (redirectPath && redirectPath !== '/dashboard') {
-        const url = req.nextUrl.clone();
-        url.pathname = redirectPath;
-        return NextResponse.redirect(url);
-      }
+    // Redirecionar raiz para dashboard se logado
+    if (pathname === '/' && token) {
+      const url = req.nextUrl.clone();
+      url.pathname = '/dashboard';
+      return NextResponse.redirect(url);
     }
 
     return NextResponse.next();
@@ -99,6 +95,7 @@ function isPublicRoute(pathname: string): boolean {
     '/api/users',
     '/api/projects', 
     '/api/items',
+    '/qr', // QR codes são públicos
     '/favicon.ico',
     '/_next',
     '/vercel.svg',
@@ -117,28 +114,14 @@ function getRequiredRoles(pathname: string): UserRole[] {
     return ROLE_ROUTES[pathname];
   }
   
-  // Busca por padrão (ex: /producao/calhas/123 -> /producao/calhas)
+  // Busca por padrão (ex: /dashboard/producao/calhas/123 -> /dashboard/producao/calhas)
   for (const route in ROLE_ROUTES) {
-    if (pathname.startsWith(route + '/')) {
+    if (pathname.startsWith(route + '/') || pathname === route) {
       return ROLE_ROUTES[route];
     }
   }
   
   return [];
-}
-
-// Função para determinar dashboard padrão baseado no role
-function getDefaultDashboard(role: UserRole): string {
-  const dashboards: Record<UserRole, string> = {
-    medidor: '/dashboard', // Pode ir direto para medições
-    fabrica_trk: '/dashboard', // Pode ir direto para produção de calhas
-    fabrica_crt: '/dashboard', // Pode ir direto para produção de cortinas
-    logistica: '/dashboard', // Pode ir direto para logística
-    instalador: '/dashboard', // Pode ir direto para instalações
-    gestor: '/dashboard' // Dashboard geral com visão completa
-  };
-  
-  return dashboards[role] || '/dashboard';
 }
 
 // Configuração do matcher - define quais rotas o middleware deve interceptar
