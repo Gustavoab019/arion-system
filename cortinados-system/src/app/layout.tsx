@@ -1,6 +1,8 @@
+// Arquivo: /src/app/layout.tsx (ATUALIZAR o existente)
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
+import { Providers } from '@/components/providers/Providers'
 
 // Importar e conectar banco no startup (só no servidor)
 if (typeof window === 'undefined') {
@@ -28,7 +30,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="pt">
-      <body className={inter.className}>{children}</body>
+      <body className={inter.className}>
+        <Providers>
+          {children}
+        </Providers>
+      </body>
     </html>
   )
 }
