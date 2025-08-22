@@ -1,561 +1,498 @@
-// Arquivo: /src/app/dashboard/page.tsx - DESIGN SYSTEM INDUSTRIAL
 'use client';
 
 import { useSession } from 'next-auth/react';
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { UserRole } from '@/types';
 
-// =============================================================================
-// DESIGN SYSTEM - SISTEMA INDUSTRIAL DE CORTINADOS
-// =============================================================================
+interface DashboardStats {
+  totalProjetos: number;
+  totalItens: number;
+  itensPendentes: number;
+  itensProducao: number;
+  itensInstalados: number;
+  projetosAtivos: number;
+}
 
-// Cores do sistema (seguindo especificação)
-const COLORS = {
-  primary: {
-    600: '#1e40af', // Azul corporativo principal
-    500: '#3b82f6', // Azul corporativo secundário
+const ROLE_CONFIG = {
+  medidor: {
+    title: 'Centro de Medição',
+    subtitle: 'Gestão de Medidas e Levantamentos',
+    mainAction: '/dashboard/medidor',
+    icon: '📐',
+    color: 'blue',
+    description: 'Registar e consultar medições de projetos'
   },
-  gray: {
-    500: '#64748b', // Cinza técnico
-    400: '#94a3b8', // Cinza claro
-    300: '#cbd5e1',
-    200: '#e2e8f0',
-    100: '#f1f5f9',
-    50: '#f8fafc',  // Background cinza
+  fabrica_trk: {
+    title: 'Produção TRK',
+    subtitle: 'Fabricação de Calhas Técnicas',
+    mainAction: '/dashboard/fabrica-trk',
+    icon: '🏭',
+    color: 'indigo',
+    description: 'Gerir produção de calhas técnicas'
   },
-  status: {
-    success: '#10b981', // Verde - concluído
-    warning: '#f59e0b', // Amarelo - em andamento
-    error: '#ef4444',   // Vermelho - problemas
-    pending: '#6b7280', // Cinza - pendente
+  fabrica_crt: {
+    title: 'Produção CRT',
+    subtitle: 'Fabricação de Cortinas',
+    mainAction: '/dashboard/fabrica-crt',
+    icon: '🏗️',
+    color: 'emerald',
+    description: 'Controlar fabricação de cortinas'
   },
-  white: '#ffffff',
-} as const;
+  logistica: {
+    title: 'Centro Logístico',
+    subtitle: 'Gestão de Stocks e Expedição',
+    mainAction: '/dashboard/logistica',
+    icon: '📦',
+    color: 'amber',
+    description: 'Gerir stocks e expedições'
+  },
+  instalador: {
+    title: 'Departamento de Instalação',
+    subtitle: 'Execução e Controlo de Qualidade',
+    mainAction: '/dashboard/instalador',
+    icon: '🔧',
+    color: 'rose',
+    description: 'Executar e controlar instalações'
+  },
+  gestor: {
+    title: 'Painel de Controlo Executivo',
+    subtitle: 'Supervisão Geral e Análise',
+    mainAction: '/dashboard/gestor',
+    icon: '⚡',
+    color: 'violet',
+    description: 'Supervisionar e analisar operações'
+  }
+};
 
-// Componente: Card de Métrica Industrial
-interface MetricCardProps {
-  title: string;
-  value: string | number;
-  status: 'success' | 'warning' | 'error' | 'pending' | 'primary';
-  subtitle?: string;
-}
-
-function MetricCard({ title, value, status, subtitle }: MetricCardProps) {
-  const statusColors = {
-    success: COLORS.status.success,
-    warning: COLORS.status.warning,
-    error: COLORS.status.error,
-    pending: COLORS.status.pending,
-    primary: COLORS.primary[600],
-  };
-
-  return (
-    <div className="bg-white border border-gray-200 rounded-lg p-6 hover:border-gray-300 transition-colors">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-medium text-gray-600 uppercase tracking-wide">
-          {title}
-        </h3>
-        <div 
-          className="w-3 h-3 rounded-full"
-          style={{ backgroundColor: statusColors[status] }}
-        />
-      </div>
-      <div className="mb-2">
-        <span className="text-3xl font-bold text-gray-900">
-          {value}
-        </span>
-      </div>
-      {subtitle && (
-        <p className="text-sm text-gray-500">
-          {subtitle}
-        </p>
-      )}
-    </div>
-  );
-}
-
-// Componente: Botão de Ação Industrial
-interface ActionButtonProps {
-  title: string;
-  description: string;
-  onClick: () => void;
-  variant: 'primary' | 'secondary' | 'success';
-  disabled?: boolean;
-  badge?: string | number;
-}
-
-function ActionButton({ title, description, onClick, variant, disabled, badge }: ActionButtonProps) {
-  const variants = {
-    primary: 'bg-blue-600 hover:bg-blue-700 text-white border-blue-600',
-    secondary: 'bg-gray-600 hover:bg-gray-700 text-white border-gray-600',
-    success: 'bg-green-600 hover:bg-green-700 text-white border-green-600',
-  };
-
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className={`
-        ${variants[variant]}
-        ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:shadow-lg'}
-        w-full p-6 border-2 rounded-lg transition-all duration-200 text-left relative
-      `}
-    >
-      {badge && (
-        <div className="absolute top-4 right-4 bg-white/20 text-xs font-bold px-2 py-1 rounded">
-          {badge}
-        </div>
-      )}
-      <h3 className="text-lg font-bold mb-2">{title}</h3>
-      <p className="text-sm opacity-90">{description}</p>
-    </button>
-  );
-}
-
-// Componente: Status Badge
-interface StatusBadgeProps {
-  label: string;
-  count: number;
-  status: 'success' | 'warning' | 'error' | 'pending';
-}
-
-function StatusBadge({ label, count, status }: StatusBadgeProps) {
-  const statusConfig = {
-    success: { bg: 'bg-green-100', text: 'text-green-800', border: 'border-green-200' },
-    warning: { bg: 'bg-yellow-100', text: 'text-yellow-800', border: 'border-yellow-200' },
-    error: { bg: 'bg-red-100', text: 'text-red-800', border: 'border-red-200' },
-    pending: { bg: 'bg-gray-100', text: 'text-gray-800', border: 'border-gray-200' },
-  };
-
-  const config = statusConfig[status];
-
-  return (
-    <div className={`${config.bg} ${config.border} border rounded-lg px-4 py-3 flex items-center justify-between min-w-[140px]`}>
-      <span className={`${config.text} text-sm font-medium`}>
-        {label}
-      </span>
-      <span className={`${config.text} text-xl font-bold`}>
-        {count}
-      </span>
-    </div>
-  );
-}
-
-// Componente: Seção com Header
-interface SectionProps {
-  title: string;
-  children: React.ReactNode;
-  action?: React.ReactNode;
-}
-
-function Section({ title, children, action }: SectionProps) {
-  return (
-    <div className="mb-8">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-bold text-gray-900">{title}</h2>
-        {action}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-// Componente Principal: Dashboard
-export default function DashboardPage() {
+export default function Dashboard() {
   const { data: session, status } = useSession();
-  const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({
-    projetos: { total: 0, ativos: 0, concluidos: 0 },
-    itens: { total: 0, pendente: 0, medido: 0, producao: 0, produzido: 0, logistica: 0, instalado: 0, cancelado: 0 }
+  const [stats, setStats] = useState<DashboardStats>({
+    totalProjetos: 0,
+    totalItens: 0,
+    itensPendentes: 0,
+    itensProducao: 0,
+    itensInstalados: 0,
+    projetosAtivos: 0
   });
+  const [loading, setLoading] = useState(true);
 
-  // Buscar dados do sistema
   useEffect(() => {
-    const fetchStats = async () => {
-      try {
-        const [projectsRes, itemsRes] = await Promise.all([
-          fetch('/api/projects'),
-          fetch('/api/items')
-        ]);
-
-        const projectsData = await projectsRes.json();
-        const itemsData = await itemsRes.json();
-
-        if (projectsData.success && itemsData.success) {
-          const projetos = projectsData.data || [];
-          const projetoStats = {
-            total: projetos.length,
-            ativos: projetos.filter((p: any) => !['concluido', 'cancelado'].includes(p.status)).length,
-            concluidos: projetos.filter((p: any) => p.status === 'concluido').length
-          };
-
-          const itens = itemsData.data || [];
-          const itemStats = {
-            total: itens.length,
-            pendente: itens.filter((i: any) => i.status === 'pendente').length,
-            medido: itens.filter((i: any) => i.status === 'medido').length,
-            producao: itens.filter((i: any) => i.status === 'producao').length,
-            produzido: itens.filter((i: any) => i.status === 'produzido').length,
-            logistica: itens.filter((i: any) => i.status === 'logistica').length,
-            instalado: itens.filter((i: any) => i.status === 'instalado').length,
-            cancelado: itens.filter((i: any) => i.status === 'cancelado').length
-          };
-
-          setStats({ projetos: projetoStats, itens: itemStats });
-        }
-      } catch (error) {
-        console.error('Erro ao carregar dados:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     if (session) {
-      fetchStats();
+      carregarEstatisticas();
     }
   }, [session]);
 
-  // Loading state
-  if (status === 'loading' || loading) {
+  const carregarEstatisticas = async () => {
+    try {
+      setLoading(true);
+      
+      const projetosResponse = await fetch('/api/projects');
+      const projetosData = await projetosResponse.json();
+      
+      const itensResponse = await fetch('/api/items');
+      const itensData = await itensResponse.json();
+      
+      if (projetosData.success && itensData.success) {
+        const projetos = projetosData.data || [];
+        const itens = itensData.data || [];
+        
+        setStats({
+          totalProjetos: projetos.length,
+          projetosAtivos: projetos.filter((p: any) => 
+            !['concluido', 'cancelado'].includes(p.status)
+          ).length,
+          totalItens: itens.length,
+          itensPendentes: itens.filter((i: any) => i.status === 'pendente').length,
+          itensProducao: itens.filter((i: any) => 
+            ['producao', 'produzido'].includes(i.status)
+          ).length,
+          itensInstalados: itens.filter((i: any) => i.status === 'instalado').length
+        });
+      }
+    } catch (error) {
+      console.error('Erro ao carregar estatísticas:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (status === 'loading') {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-12 h-12 border-4 border-gray-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-600 font-medium">Carregando sistema...</p>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-lg border-2 border-gray-100 p-12 text-center max-w-md w-full">
+          <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-6"></div>
+          <h3 className="text-gray-900 font-bold text-xl mb-3">A Carregar Sistema</h3>
+          <p className="text-gray-600 text-lg">Por favor aguarde...</p>
         </div>
       </div>
     );
   }
 
-  if (!session) return null;
+  if (!session) {
+    return null;
+  }
 
-  const user = session.user as any;
-  const userRole = user.role as UserRole;
+  const userRole = (session.user as any).role as UserRole;
+  const config = ROLE_CONFIG[userRole];
 
-  // Configurações por tipo de usuário
-  const getRoleConfig = (role: UserRole) => {
-    const configs = {
-      medidor: {
-        title: 'Estação de Medição',
-        subtitle: 'Registro de dimensões e especificações',
-        metrics: [
-          { title: 'Pendentes', value: stats.itens.pendente, status: 'warning' as const, subtitle: 'Aguardando medição' },
-          { title: 'Medidos', value: stats.itens.medido, status: 'success' as const, subtitle: 'Concluídos hoje' },
-          { title: 'Total', value: stats.itens.total, status: 'primary' as const, subtitle: 'Itens no sistema' }
-        ],
-        actions: [
-          {
-            title: 'Iniciar Medição',
-            description: 'Registrar dimensões de novos itens',
-            variant: 'primary' as const,
-            badge: stats.itens.pendente > 0 ? stats.itens.pendente : undefined
-          },
-          {
-            title: 'Consultar Histórico',
-            description: 'Ver medições anteriores',
-            variant: 'secondary' as const
-          }
-        ]
-      },
-      fabrica_trk: {
-        title: 'Linha TRK - Calhas',
-        subtitle: 'Produção de trilhos e calhas',
-        metrics: [
-          { title: 'Fila', value: stats.itens.medido, status: 'warning' as const, subtitle: 'Para produzir' },
-          { title: 'Produção', value: stats.itens.producao, status: 'warning' as const, subtitle: 'Em andamento' },
-          { title: 'Finalizados', value: stats.itens.produzido, status: 'success' as const, subtitle: 'Hoje' }
-        ],
-        actions: [
-          {
-            title: 'Iniciar Produção',
-            description: 'Marcar itens em produção',
-            variant: 'primary' as const,
-            badge: stats.itens.medido > 0 ? stats.itens.medido : undefined
-          },
-          {
-            title: 'Finalizar Lote',
-            description: 'Confirmar itens produzidos',
-            variant: 'success' as const,
-            badge: stats.itens.producao > 0 ? stats.itens.producao : undefined
-          }
-        ]
-      },
-      fabrica_crt: {
-        title: 'Linha CRT - Cortinas',
-        subtitle: 'Produção de cortinas e tecidos',
-        metrics: [
-          { title: 'Fila', value: stats.itens.medido, status: 'warning' as const, subtitle: 'Para produzir' },
-          { title: 'Produção', value: stats.itens.producao, status: 'warning' as const, subtitle: 'Em andamento' },
-          { title: 'Finalizados', value: stats.itens.produzido, status: 'success' as const, subtitle: 'Hoje' }
-        ],
-        actions: [
-          {
-            title: 'Iniciar Produção',
-            description: 'Marcar itens em produção',
-            variant: 'primary' as const,
-            badge: stats.itens.medido > 0 ? stats.itens.medido : undefined
-          },
-          {
-            title: 'Finalizar Lote',
-            description: 'Confirmar itens produzidos',
-            variant: 'success' as const,
-            badge: stats.itens.producao > 0 ? stats.itens.producao : undefined
-          }
-        ]
-      },
-      logistica: {
-        title: 'Centro de Distribuição',
-        subtitle: 'Montagem de kits e expedição',
-        metrics: [
-          { title: 'Para Kits', value: stats.itens.produzido, status: 'warning' as const, subtitle: 'Aguardando' },
-          { title: 'Prontos', value: stats.itens.logistica, status: 'success' as const, subtitle: 'Para entrega' },
-          { title: 'Expedidos', value: stats.itens.instalado, status: 'success' as const, subtitle: 'Entregues' }
-        ],
-        actions: [
-          {
-            title: 'Montar Kits',
-            description: 'Organizar itens para entrega',
-            variant: 'primary' as const,
-            badge: stats.itens.produzido > 0 ? stats.itens.produzido : undefined
-          },
-          {
-            title: 'Agendar Entrega',
-            description: 'Programar instalação',
-            variant: 'secondary' as const
-          }
-        ]
-      },
-      instalador: {
-        title: 'Central de Instalação',
-        subtitle: 'Instalação e finalização',
-        metrics: [
-          { title: 'Agendados', value: stats.itens.logistica, status: 'warning' as const, subtitle: 'Para instalar' },
-          { title: 'Instalados', value: stats.itens.instalado, status: 'success' as const, subtitle: 'Concluídos' },
-          { title: 'Eficiência', value: `${stats.itens.total ? Math.round((stats.itens.instalado / stats.itens.total) * 100) : 0}%`, status: 'primary' as const, subtitle: 'Taxa sucesso' }
-        ],
-        actions: [
-          {
-            title: 'Scanner QR',
-            description: 'Confirmar instalação',
-            variant: 'primary' as const,
-            badge: stats.itens.logistica > 0 ? stats.itens.logistica : undefined
-          },
-          {
-            title: 'Relatório Campo',
-            description: 'Registrar observações',
-            variant: 'secondary' as const
-          }
-        ]
-      },
-      gestor: {
-        title: 'Centro de Controle',
-        subtitle: 'Supervisão e análise operacional',
-        metrics: [
-          { title: 'Projetos Ativos', value: stats.projetos.ativos, status: 'primary' as const, subtitle: 'Em andamento' },
-          { title: 'Eficiência', value: `${stats.itens.total ? Math.round((stats.itens.instalado / stats.itens.total) * 100) : 0}%`, status: 'success' as const, subtitle: 'Taxa conclusão' },
-          { title: 'Em Fluxo', value: stats.itens.total - stats.itens.instalado - stats.itens.cancelado, status: 'warning' as const, subtitle: 'Processando' }
-        ],
-        actions: [
-          {
-            title: 'Relatórios',
-            description: 'Análise e KPIs executivos',
-            variant: 'primary' as const
-          },
-          {
-            title: 'Gestão Usuários',
-            description: 'Administrar equipe',
-            variant: 'secondary' as const
-          },
-          {
-            title: 'Projetos',
-            description: 'Supervisionar operações',
-            variant: 'success' as const,
-            badge: stats.projetos.ativos > 0 ? stats.projetos.ativos : undefined
-          }
-        ]
-      }
-    };
-
-    return configs[role];
+  const colorVariants = {
+    blue: {
+      bg: 'bg-blue-700',
+      hover: 'hover:bg-blue-800',
+      text: 'text-blue-700',
+      border: 'border-blue-300',
+      light: 'bg-blue-50'
+    },
+    indigo: {
+      bg: 'bg-indigo-700',
+      hover: 'hover:bg-indigo-800',
+      text: 'text-indigo-700',
+      border: 'border-indigo-300',
+      light: 'bg-indigo-50'
+    },
+    emerald: {
+      bg: 'bg-emerald-700',
+      hover: 'hover:bg-emerald-800',
+      text: 'text-emerald-700',
+      border: 'border-emerald-300',
+      light: 'bg-emerald-50'
+    },
+    amber: {
+      bg: 'bg-amber-700',
+      hover: 'hover:bg-amber-800',
+      text: 'text-amber-700',
+      border: 'border-amber-300',
+      light: 'bg-amber-50'
+    },
+    rose: {
+      bg: 'bg-rose-700',
+      hover: 'hover:bg-rose-800',
+      text: 'text-rose-700',
+      border: 'border-rose-300',
+      light: 'bg-rose-50'
+    },
+    violet: {
+      bg: 'bg-violet-700',
+      hover: 'hover:bg-violet-800',
+      text: 'text-violet-700',
+      border: 'border-violet-300',
+      light: 'bg-violet-50'
+    }
   };
 
-  const config = getRoleConfig(userRole);
+  const colors = colorVariants[config.color as keyof typeof colorVariants];
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header da Página */}
-      <div className="bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-6 py-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 mb-1">
-                {config.title}
-              </h1>
-              <p className="text-gray-600">
-                {config.subtitle}
-              </p>
+      {/* Header Melhorado */}
+      <header className="bg-white border-b-4 border-gray-200 shadow-md">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex flex-col sm:flex-row items-center justify-between py-4 gap-4">
+            <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-4">
+                <div className={`w-12 h-12 ${colors.bg} rounded-xl flex items-center justify-center text-white text-lg font-bold shadow-lg`}>
+                  CP
+                </div>
+                <div className="text-center sm:text-left">
+                  <h1 className="text-2xl lg:text-3xl font-bold text-gray-900">
+                    Cortinados Portugal
+                  </h1>
+                  <p className="text-gray-600 text-base lg:text-lg">
+                    Sistema de Gestão Empresarial
+                  </p>
+                </div>
+              </div>
             </div>
-            <div className="text-right bg-gray-50 px-4 py-3 rounded-lg border border-gray-200">
-              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                Operador
-              </p>
-              <p className="text-lg font-bold text-gray-900">
-                {user.name}
-              </p>
-              {user.empresa && (
-                <p className="text-sm text-gray-600">
-                  {user.empresa}
-                </p>
-              )}
+            
+            <div className="flex items-center space-x-4 bg-gray-50 rounded-xl p-4 border-2 border-gray-200">
+              <div className="text-center sm:text-right">
+                <div className="text-gray-900 font-bold text-lg">{session.user.name}</div>
+                <div className="text-gray-600 text-base">
+                  {(session.user as any).empresa || 'Cortinados Portugal'}
+                </div>
+              </div>
+              <div className="w-12 h-12 bg-gray-300 rounded-full flex items-center justify-center border-2 border-gray-400">
+                <span className="text-gray-700 text-lg font-bold">
+                  {session.user.name?.charAt(0).toUpperCase()}
+                </span>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      </header>
 
-      <div className="max-w-7xl mx-auto px-6 py-8">
-        {/* Métricas Principais */}
-        <Section title="Indicadores Operacionais">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {config.metrics.map((metric, index) => (
-              <MetricCard key={index} {...metric} />
-            ))}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-8 space-y-8">
+        
+        {/* Painel Principal do Departamento - Mais Destacado */}
+        <div className={`${colors.light} border-4 ${colors.border} rounded-2xl p-8 lg:p-10 shadow-lg`}>
+          <div className="flex flex-col lg:flex-row items-center justify-between gap-6">
+            <div className="flex flex-col sm:flex-row items-center space-y-4 sm:space-y-0 sm:space-x-6 text-center sm:text-left">
+              <div className={`w-20 h-20 lg:w-24 lg:h-24 ${colors.bg} rounded-2xl flex items-center justify-center text-white text-3xl lg:text-4xl shadow-lg`}>
+                {config.icon}
+              </div>
+              <div>
+                <h2 className="text-2xl lg:text-4xl font-bold text-gray-900 mb-2">
+                  {config.title}
+                </h2>
+                <p className="text-gray-700 mb-4 text-lg lg:text-xl">
+                  {config.subtitle}
+                </p>
+                <p className="text-gray-600 mb-6 text-base lg:text-lg">
+                  {config.description}
+                </p>
+                <Link
+                  href={config.mainAction}
+                  className={`inline-flex items-center px-8 py-4 ${colors.bg} ${colors.hover} text-white font-bold rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl text-lg transform hover:scale-105`}
+                >
+                  Aceder ao Painel
+                  <svg className="ml-3 w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" />
+                  </svg>
+                </Link>
+              </div>
+            </div>
+            <div className="bg-white rounded-xl p-6 border-2 border-gray-200 shadow-md">
+              <div className="text-center">
+                <div className="text-2xl lg:text-3xl font-bold text-gray-900 mb-2">
+                  {new Date().toLocaleDateString('pt-PT', { 
+                    weekday: 'long',
+                    day: 'numeric',
+                    month: 'long'
+                  })}
+                </div>
+                <div className="text-gray-600 text-xl lg:text-2xl font-semibold">
+                  {new Date().toLocaleTimeString('pt-PT', { 
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })}
+                </div>
+              </div>
+            </div>
           </div>
-        </Section>
+        </div>
 
-        {/* Ações Principais */}
-        <Section title="Ações Disponíveis">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {config.actions.map((action, index) => (
-              <ActionButton
-                key={index}
-                {...action}
-                onClick={() => {}}
-                disabled={true}
-              />
-            ))}
+        {/* Métricas Principais - Mais Visíveis */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
+          <div className="bg-white rounded-xl border-4 border-blue-200 p-6 lg:p-8 shadow-lg hover:shadow-xl transition-all duration-200">
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-gray-700 text-base lg:text-lg font-bold">Total Projetos</span>
+              <div className="w-4 h-4 bg-blue-500 rounded-full"></div>
+            </div>
+            <div className="text-3xl lg:text-4xl font-bold text-gray-900 mb-2">
+              {loading ? '−' : stats.totalProjetos.toLocaleString()}
+            </div>
+            <div className="text-sm lg:text-base text-gray-600">Em sistema</div>
           </div>
           
-          {/* Aviso de Desenvolvimento */}
-          <div className="mt-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-            <div className="flex items-start space-x-3">
-              <div className="bg-yellow-100 p-2 rounded">
-                <svg className="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          <div className="bg-white rounded-xl border-4 border-emerald-200 p-6 lg:p-8 shadow-lg hover:shadow-xl transition-all duration-200">
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-gray-700 text-base lg:text-lg font-bold">Projetos Ativos</span>
+              <div className="w-4 h-4 bg-emerald-500 rounded-full"></div>
+            </div>
+            <div className="text-3xl lg:text-4xl font-bold text-gray-900 mb-2">
+              {loading ? '−' : stats.projetosAtivos.toLocaleString()}
+            </div>
+            <div className="text-sm lg:text-base text-gray-600">Em execução</div>
+          </div>
+          
+          <div className="bg-white rounded-xl border-4 border-violet-200 p-6 lg:p-8 shadow-lg hover:shadow-xl transition-all duration-200">
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-gray-700 text-base lg:text-lg font-bold">Total Itens</span>
+              <div className="w-4 h-4 bg-violet-500 rounded-full"></div>
+            </div>
+            <div className="text-3xl lg:text-4xl font-bold text-gray-900 mb-2">
+              {loading ? '−' : stats.totalItens.toLocaleString()}
+            </div>
+            <div className="text-sm lg:text-base text-gray-600">No inventário</div>
+          </div>
+          
+          <div className="bg-white rounded-xl border-4 border-amber-200 p-6 lg:p-8 shadow-lg hover:shadow-xl transition-all duration-200">
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-gray-700 text-base lg:text-lg font-bold">Pendentes</span>
+              <div className="w-4 h-4 bg-amber-500 rounded-full"></div>
+            </div>
+            <div className="text-3xl lg:text-4xl font-bold text-gray-900 mb-2">
+              {loading ? '−' : stats.itensPendentes.toLocaleString()}
+            </div>
+            <div className="text-sm lg:text-base text-gray-600">A aguardar</div>
+          </div>
+          
+          <div className="bg-white rounded-xl border-4 border-orange-200 p-6 lg:p-8 shadow-lg hover:shadow-xl transition-all duration-200">
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-gray-700 text-base lg:text-lg font-bold">Em Produção</span>
+              <div className="w-4 h-4 bg-orange-500 rounded-full"></div>
+            </div>
+            <div className="text-3xl lg:text-4xl font-bold text-gray-900 mb-2">
+              {loading ? '−' : stats.itensProducao.toLocaleString()}
+            </div>
+            <div className="text-sm lg:text-base text-gray-600">A fabricar</div>
+          </div>
+          
+          <div className="bg-white rounded-xl border-4 border-green-200 p-6 lg:p-8 shadow-lg hover:shadow-xl transition-all duration-200">
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-gray-700 text-base lg:text-lg font-bold">Concluídos</span>
+              <div className="w-4 h-4 bg-green-500 rounded-full"></div>
+            </div>
+            <div className="text-3xl lg:text-4xl font-bold text-gray-900 mb-2">
+              {loading ? '−' : stats.itensInstalados.toLocaleString()}
+            </div>
+            <div className="text-sm lg:text-base text-gray-600">Instalados</div>
+          </div>
+        </div>
+
+        {/* Módulos do Sistema - Simplificados e Maiores */}
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
+          
+          <Link href="/dashboard/projetos" 
+                className="bg-white rounded-xl border-4 border-gray-200 hover:border-blue-400 hover:shadow-xl transition-all duration-300 p-8 group transform hover:scale-105">
+            <div className="flex flex-col items-center text-center space-y-6">
+              <div className="w-20 h-20 bg-blue-100 rounded-2xl flex items-center justify-center group-hover:bg-blue-200 transition-colors shadow-lg">
+                <svg className="w-10 h-10 text-blue-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
                 </svg>
               </div>
               <div>
-                <h3 className="text-yellow-800 font-medium">
-                  Funcionalidades em Desenvolvimento
+                <h3 className="font-bold text-xl lg:text-2xl text-gray-900 group-hover:text-blue-700 mb-2">
+                  Gestão de Projetos
                 </h3>
-                <p className="text-yellow-700 text-sm mt-1">
-                  As interfaces operacionais estão sendo implementadas. 
-                  Sistema entrará em produção nas próximas iterações.
-                </p>
+                <p className="text-gray-600 text-lg">Consultar e gerir todos os projetos</p>
               </div>
+              <div className="text-blue-700 text-lg font-bold group-hover:text-blue-800 flex items-center">
+                Ver Projetos 
+                <svg className="ml-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" />
+                </svg>
+              </div>
+            </div>
+          </Link>
+
+          <Link href="/dashboard/itens" 
+                className="bg-white rounded-xl border-4 border-gray-200 hover:border-violet-400 hover:shadow-xl transition-all duration-300 p-8 group transform hover:scale-105">
+            <div className="flex flex-col items-center text-center space-y-6">
+              <div className="w-20 h-20 bg-violet-100 rounded-2xl flex items-center justify-center group-hover:bg-violet-200 transition-colors shadow-lg">
+                <svg className="w-10 h-10 text-violet-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="font-bold text-xl lg:text-2xl text-gray-900 group-hover:text-violet-700 mb-2">
+                  Inventário de Itens
+                </h3>
+                <p className="text-gray-600 text-lg">Rastrear todos os componentes</p>
+              </div>
+              <div className="text-violet-700 text-lg font-bold group-hover:text-violet-800 flex items-center">
+                Ver Inventário
+                <svg className="ml-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" />
+                </svg>
+              </div>
+            </div>
+          </Link>
+
+          <Link href="/dashboard/scanner" 
+                className="bg-white rounded-xl border-4 border-gray-200 hover:border-emerald-400 hover:shadow-xl transition-all duration-300 p-8 group transform hover:scale-105">
+            <div className="flex flex-col items-center text-center space-y-6">
+              <div className="w-20 h-20 bg-emerald-100 rounded-2xl flex items-center justify-center group-hover:bg-emerald-200 transition-colors shadow-lg">
+                <svg className="w-10 h-10 text-emerald-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="font-bold text-xl lg:text-2xl text-gray-900 group-hover:text-emerald-700 mb-2">
+                  Scanner QR Code
+                </h3>
+                <p className="text-gray-600 text-lg">Leitura rápida de códigos</p>
+              </div>
+              <div className="text-emerald-700 text-lg font-bold group-hover:text-emerald-800 flex items-center">
+                Abrir Scanner
+                <svg className="ml-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 5l7 7-7 7" />
+                </svg>
+              </div>
+            </div>
+          </Link>
+        </div>
+
+        {/* Funcionalidades Específicas por Departamento - Melhoradas */}
+        {userRole === 'medidor' && (
+          <div className="bg-white rounded-xl border-4 border-blue-200 p-8 shadow-lg">
+            <h3 className="text-2xl lg:text-3xl font-bold text-gray-900 mb-6 text-center">
+              🔧 Ferramentas de Medição
+            </h3>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <Link href="/dashboard/medidor" 
+                    className="bg-blue-700 hover:bg-blue-800 text-white p-8 rounded-xl transition-all duration-200 transform hover:scale-105 shadow-lg">
+                <div className="text-center">
+                  <div className="text-4xl mb-4">📐</div>
+                  <div className="font-bold text-xl lg:text-2xl mb-3">Centro de Medição</div>
+                  <div className="text-blue-100 text-lg">Registar medidas e levantamentos</div>
+                </div>
+              </Link>
+              <Link href="/dashboard/medidor/historico" 
+                    className="bg-gray-100 hover:bg-gray-200 text-gray-900 p-8 rounded-xl transition-all duration-200 border-4 border-gray-300 transform hover:scale-105 shadow-lg">
+                <div className="text-center">
+                  <div className="text-4xl mb-4">📋</div>
+                  <div className="font-bold text-xl lg:text-2xl mb-3">Histórico de Medições</div>
+                  <div className="text-gray-600 text-lg">Consultar medições anteriores</div>
+                </div>
+              </Link>
             </div>
           </div>
-        </Section>
-
-        {/* Status Global - Apenas Gestor */}
-        {userRole === 'gestor' && (
-          <Section title="Status Global do Sistema">
-            <div className="bg-white rounded-lg border border-gray-200 p-6">
-              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-6">
-                <StatusBadge label="Pendente" count={stats.itens.pendente} status="pending" />
-                <StatusBadge label="Medido" count={stats.itens.medido} status="success" />
-                <StatusBadge label="Produção" count={stats.itens.producao} status="warning" />
-                <StatusBadge label="Produzido" count={stats.itens.produzido} status="success" />
-                <StatusBadge label="Logística" count={stats.itens.logistica} status="warning" />
-                <StatusBadge label="Instalado" count={stats.itens.instalado} status="success" />
-                <StatusBadge label="Cancelado" count={stats.itens.cancelado} status="error" />
-              </div>
-              
-              {/* Barra de Progresso */}
-              <div className="mb-4">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm font-medium text-gray-700">
-                    Progresso Global
-                  </span>
-                  <span className="text-sm font-bold text-gray-900">
-                    {stats.itens.total ? Math.round((stats.itens.instalado / stats.itens.total) * 100) : 0}%
-                  </span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-3">
-                  <div 
-                    className="bg-green-600 h-3 rounded-full transition-all duration-500"
-                    style={{ 
-                      width: `${stats.itens.total ? (stats.itens.instalado / stats.itens.total) * 100 : 0}%` 
-                    }}
-                  />
-                </div>
-                <p className="text-xs text-gray-500 mt-1">
-                  {stats.itens.instalado} de {stats.itens.total} itens finalizados
-                </p>
-              </div>
-            </div>
-          </Section>
         )}
 
-        {/* Resumo Operacional */}
-        <Section title="Resumo da Operação">
-          <div className="bg-white rounded-lg border border-gray-200 p-6">
-            <div className="space-y-4">
-              {userRole === 'medidor' && (
-                <div>
-                  <h4 className="font-bold text-gray-900 mb-2">Prioridades de Medição</h4>
-                  <p className="text-gray-700">
-                    <strong>{stats.itens.pendente}</strong> itens aguardam medição. 
-                    Processe os mais antigos primeiro para manter o fluxo de produção.
-                    Precisão é fundamental para evitar retrabalho.
-                  </p>
+        {userRole === 'gestor' && (
+          <div className="bg-white rounded-xl border-4 border-violet-200 p-8 shadow-lg">
+            <h3 className="text-2xl lg:text-3xl font-bold text-gray-900 mb-6 text-center">
+              ⚡ Painel de Controlo Executivo
+            </h3>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <Link href="/dashboard/gestor/usuarios" 
+                    className="bg-violet-700 hover:bg-violet-800 text-white p-8 rounded-xl transition-all duration-200 transform hover:scale-105 shadow-lg">
+                <div className="text-center">
+                  <div className="text-4xl mb-4">👥</div>
+                  <div className="font-bold text-lg lg:text-xl mb-3">Gestão de Utilizadores</div>
+                  <div className="text-violet-100 text-base">Administrar equipa e permissões</div>
                 </div>
-              )}
-
-              {(userRole === 'fabrica_trk' || userRole === 'fabrica_crt') && (
-                <div>
-                  <h4 className="font-bold text-gray-900 mb-2">Status da Produção</h4>
-                  <p className="text-gray-700">
-                    <strong>{stats.itens.medido}</strong> itens com medidas aprovadas na fila. 
-                    <strong>{stats.itens.producao}</strong> em produção ativa.
-                    Mantenha ritmo constante para não criar gargalos.
-                  </p>
+              </Link>
+              <Link href="/dashboard/gestor/relatorios" 
+                    className="bg-gray-100 hover:bg-gray-200 text-gray-900 p-8 rounded-xl transition-all duration-200 border-4 border-gray-300 transform hover:scale-105 shadow-lg">
+                <div className="text-center">
+                  <div className="text-4xl mb-4">📊</div>
+                  <div className="font-bold text-lg lg:text-xl mb-3">Relatórios Executivos</div>
+                  <div className="text-gray-600 text-base">Análises e indicadores</div>
                 </div>
-              )}
-
-              {userRole === 'logistica' && (
-                <div>
-                  <h4 className="font-bold text-gray-900 mb-2">Centro de Distribuição</h4>
-                  <p className="text-gray-700">
-                    <strong>{stats.itens.produzido}</strong> itens prontos para montagem de kits.
-                    Organize por projeto para otimizar entregas e reduzir custos.
-                  </p>
+              </Link>
+              <Link href="/dashboard/gestor/configuracoes" 
+                    className="bg-gray-100 hover:bg-gray-200 text-gray-900 p-8 rounded-xl transition-all duration-200 border-4 border-gray-300 transform hover:scale-105 shadow-lg">
+                <div className="text-center">
+                  <div className="text-4xl mb-4">⚙️</div>
+                  <div className="font-bold text-lg lg:text-xl mb-3">Configurações</div>
+                  <div className="text-gray-600 text-base">Sistema e preferências</div>
                 </div>
-              )}
-
-              {userRole === 'instalador' && (
-                <div>
-                  <h4 className="font-bold text-gray-900 mb-2">Agenda de Instalação</h4>
-                  <p className="text-gray-700">
-                    <strong>{stats.itens.logistica}</strong> kits prontos para instalação.
-                    Use scanner QR para confirmar cada instalação e manter rastreabilidade.
-                  </p>
-                </div>
-              )}
-
-              {userRole === 'gestor' && (
-                <div>
-                  <h4 className="font-bold text-gray-900 mb-2">Análise Executiva</h4>
-                  <p className="text-gray-700">
-                    Sistema operando com <strong>{stats.itens.total ? Math.round((stats.itens.instalado / stats.itens.total) * 100) : 0}%</strong> de eficiência.
-                    {stats.itens.pendente > 10 && ' Gargalo identificado na medição.'}
-                    {stats.itens.producao > 20 && ' Sobrecarga na produção.'}
-                    {stats.itens.pendente <= 10 && stats.itens.producao <= 20 && ' Operações normalizadas.'}
-                  </p>
-                </div>
-              )}
+              </Link>
             </div>
           </div>
-        </Section>
+        )}
+
+        {/* Status do Sistema - Melhorado */}
+        <footer className="bg-white rounded-xl border-4 border-gray-200 p-6 lg:p-8 shadow-lg">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex flex-col sm:flex-row items-center space-y-2 sm:space-y-0 sm:space-x-4">
+              <div className="flex items-center space-x-3">
+                <div className="w-4 h-4 bg-green-500 rounded-full animate-pulse"></div>
+                <span className="text-gray-900 font-bold text-lg">Sistema Operacional</span>
+              </div>
+              <div className="hidden sm:block text-gray-400">•</div>
+              <span className="text-gray-600 text-lg font-semibold">
+                Versão 2.1.0
+              </span>
+            </div>
+            <div className="text-gray-600 text-lg font-semibold bg-gray-50 px-4 py-2 rounded-lg border-2 border-gray-200">
+              Última sincronização: {new Date().toLocaleTimeString('pt-PT')}
+            </div>
+          </div>
+        </footer>
       </div>
     </div>
   );
