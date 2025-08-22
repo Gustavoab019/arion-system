@@ -11,6 +11,9 @@ const ROLE_ROUTES: Record<string, UserRole[]> = {
   
   // Rotas específicas por função
   '/dashboard/medicao': ['medidor', 'gestor'],
+  '/dashboard/medidor': ['medidor', 'gestor'], // Existente
+  '/dashboard/fabrica-trk': ['fabrica_trk', 'gestor'], // NOVA LINHA
+  '/dashboard/fabrica-crt': ['fabrica_crt', 'gestor'],
   '/dashboard/producao': ['fabrica_trk', 'fabrica_crt', 'gestor'],
   '/dashboard/producao/calhas': ['fabrica_trk', 'gestor'],
   '/dashboard/producao/cortinas': ['fabrica_crt', 'gestor'],
@@ -137,4 +140,4 @@ export const config = {
      */
     '/((?!api/auth|_next/static|_next/image|favicon.ico|.*\\..*).*)',
   ]
-};
+};  
