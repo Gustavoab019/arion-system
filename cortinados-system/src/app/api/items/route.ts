@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession, authOptions } from '../auth/[...nextauth]/route';
 import connectDB from '@/lib/mongodb';
 import Item, { ItemUtils } from '@/models/Item';
 import { StatusItem, TipoItem } from '@/types';
@@ -6,6 +7,14 @@ import { StatusItem, TipoItem } from '@/types';
 // GET /api/items - Listar itens
 export async function GET(request: NextRequest) {
   try {
+    const session = await getServerSession(authOptions);
+    if (!session) {
+      return NextResponse.json({
+        success: false,
+        message: 'Não autenticado'
+      }, { status: 401 });
+    }
+
     await connectDB();
     
     const { searchParams } = new URL(request.url);
@@ -56,6 +65,14 @@ export async function GET(request: NextRequest) {
 // POST /api/items - Criar item
 export async function POST(request: NextRequest) {
   try {
+    const session = await getServerSession(authOptions);
+    if (!session) {
+      return NextResponse.json({
+        success: false,
+        message: 'Não autenticado'
+      }, { status: 401 });
+    }
+
     await connectDB();
     
     const body = await request.json();

@@ -95,9 +95,6 @@ function isPublicRoute(pathname: string): boolean {
     '/auth/login',
     '/auth/register',
     '/api/auth',
-    '/api/users',
-    '/api/projects', 
-    '/api/items',
     '/qr', // QR codes são públicos
     '/favicon.ico',
     '/_next',

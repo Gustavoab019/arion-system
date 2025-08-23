@@ -156,3 +156,4 @@ export { handler as GET, handler as POST };
 
 // Exportar configurações para uso em middleware e outras partes
 export { authOptions };
+export { getServerSession } from 'next-auth/next';
