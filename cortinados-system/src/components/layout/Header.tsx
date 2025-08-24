@@ -45,7 +45,8 @@ export function Header() {
   // Navegação funcional baseada em roles
   const getNavigation = (role: UserRole) => {
     const baseNav = [
-      { name: 'Dashboard', href: '/dashboard' }
+      { name: 'Dashboard', href: '/dashboard' },
+      { name: 'Scanner', href: '/dashboard/scanner' }
     ];
 
     const roleNav = {
