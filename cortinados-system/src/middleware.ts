@@ -23,6 +23,7 @@ const ROLE_ROUTES: Record<string, UserRole[]> = {
   // Gestão - apenas gestores
   '/dashboard/relatorios': ['gestor'],
   '/dashboard/usuarios': ['gestor'],
+  '/dashboard/gestor/usuarios': ['gestor'],
   '/dashboard/projetos': ['gestor'],
   '/dashboard/configuracoes': ['gestor']
 };
