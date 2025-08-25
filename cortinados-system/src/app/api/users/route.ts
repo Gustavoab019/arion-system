@@ -15,6 +15,13 @@ export async function GET(request: NextRequest) {
       }, { status: 401 });
     }
 
+    if ((session.user as any)?.role !== 'gestor') {
+      return NextResponse.json({
+        success: false,
+        message: 'Acesso não autorizado'
+      }, { status: 403 });
+    }
+
     await connectDB();
     
     const { searchParams } = new URL(request.url);
@@ -55,6 +62,13 @@ export async function POST(request: NextRequest) {
         success: false,
         message: 'Não autenticado'
       }, { status: 401 });
+    }
+
+    if ((session.user as any)?.role !== 'gestor') {
+      return NextResponse.json({
+        success: false,
+        message: 'Acesso não autorizado'
+      }, { status: 403 });
     }
 
     await connectDB();
