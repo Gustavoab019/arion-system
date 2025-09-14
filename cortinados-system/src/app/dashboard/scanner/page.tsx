@@ -45,16 +45,10 @@ export default function ScannerPage() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // Carregar histórico do localStorage
+  // Carregar histórico ao montar componente
   useEffect(() => {
-    const savedHistory = localStorage.getItem('scanner-history');
-    if (savedHistory) {
-      try {
-        setScanHistory(JSON.parse(savedHistory));
-      } catch (error) {
-        console.error('Erro ao carregar histórico:', error);
-      }
-    }
+    const savedHistory = JSON.parse(localStorage.getItem('scanner-history') || '[]');
+    setScanHistory(savedHistory);
   }, []);
 
   // Salvar histórico no localStorage
@@ -139,7 +133,9 @@ export default function ScannerPage() {
     const exemplosCodigos = [
       'LIS-0315-01-TRK',
       'POR-0312-02-CRT',
-      'FAR-0318-03-TRK'
+      'FAR-0318-03-TRK',
+      'LIS-0316-04-CRT',
+      'BRA-0320-05-TRK'
     ];
     
     const codigoAleatorio = exemplosCodigos[Math.floor(Math.random() * exemplosCodigos.length)];
@@ -232,44 +228,46 @@ export default function ScannerPage() {
 
   const proximaAcao = getProximaAcao();
 
+  if (!session) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <Loading size="lg" text="Carregando..." />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b-4 border-blue-200 shadow-md">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+      {/* Header seguindo padrão EXATO do sistema */}
+      <header className="bg-white border-b-4 border-gray-200 shadow-md">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col sm:flex-row items-center justify-between py-4 gap-4">
             <div className="flex items-center space-x-4">
-              <Link
-                href="/dashboard"
-                className="text-gray-600 hover:text-gray-800 transition-colors"
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                </svg>
-              </Link>
-              <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center text-white text-lg font-bold shadow-lg">
-                📱
-              </div>
-              <div className="text-center sm:text-left">
-                <h1 className="text-2xl lg:text-3xl font-bold text-gray-900">
-                  Scanner QR Code
-                </h1>
-                <p className="text-gray-600 text-base lg:text-lg">
-                  Leitura rápida de itens por código
-                </p>
+              <div className="flex items-center space-x-4">
+                <div className="w-12 h-12 bg-emerald-700 rounded-xl flex items-center justify-center text-white text-lg font-bold shadow-lg">
+                  📱
+                </div>
+                <div className="text-center sm:text-left">
+                  <h1 className="text-2xl lg:text-3xl font-bold text-gray-900">
+                    Scanner QR Code
+                  </h1>
+                  <p className="text-gray-600 text-base lg:text-lg">
+                    Leitura Rápida de Códigos
+                  </p>
+                </div>
               </div>
             </div>
             
             <div className="flex items-center space-x-4 bg-gray-50 rounded-xl p-4 border-2 border-gray-200">
               <div className="text-center sm:text-right">
-                <div className="text-gray-900 font-bold text-lg">{session?.user?.name}</div>
+                <div className="text-gray-900 font-bold text-lg">{session.user?.name}</div>
                 <div className="text-gray-600 text-base">
-                  {(session?.user as any)?.empresa || 'Cortinados Portugal'}
+                  {(session.user as any)?.empresa || 'Cortinados Portugal'}
                 </div>
               </div>
               <div className="w-12 h-12 bg-gray-300 rounded-full flex items-center justify-center border-2 border-gray-400">
                 <span className="text-gray-700 text-lg font-bold">
-                  {session?.user?.name?.charAt(0).toUpperCase()}
+                  {session.user?.name?.charAt(0).toUpperCase()}
                 </span>
               </div>
             </div>
@@ -277,15 +275,54 @@ export default function ScannerPage() {
         </div>
       </header>
 
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-8 space-y-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-8 space-y-8">
         
+        {/* Painel Principal - Seguindo padrão EXATO */}
+        <div className="bg-emerald-50 border-4 border-emerald-300 rounded-2xl p-8 lg:p-10 shadow-lg">
+          <div className="flex flex-col lg:flex-row items-center justify-between gap-6">
+            <div className="flex flex-col sm:flex-row items-center space-y-4 sm:space-y-0 sm:space-x-6 text-center sm:text-left">
+              <div className="w-20 h-20 lg:w-24 lg:h-24 bg-emerald-700 rounded-2xl flex items-center justify-center text-white text-3xl lg:text-4xl shadow-lg">
+                📱
+              </div>
+              <div>
+                <h2 className="text-2xl lg:text-4xl font-bold text-gray-900 mb-2">
+                  Central de Scanner
+                </h2>
+                <p className="text-gray-700 mb-4 text-lg lg:text-xl">
+                  Sistema de Leitura QR Code
+                </p>
+                <p className="text-gray-600 mb-6 text-base lg:text-lg">
+                  Escaneie ou digite códigos para rastreamento
+                </p>
+              </div>
+            </div>
+            <div className="bg-white rounded-xl p-6 border-2 border-gray-200 shadow-md">
+              <div className="text-center">
+                <div className="text-2xl lg:text-3xl font-bold text-gray-900 mb-2">
+                  {new Date().toLocaleDateString('pt-PT', { 
+                    weekday: 'long',
+                    day: 'numeric',
+                    month: 'long'
+                  })}
+                </div>
+                <div className="text-gray-600 text-xl lg:text-2xl font-semibold">
+                  {new Date().toLocaleTimeString('pt-PT', { 
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Scanner Principal */}
-        <div className="bg-white rounded-xl border-4 border-blue-200 p-6 lg:p-8 shadow-lg">
+        <div className="bg-white rounded-xl border-4 border-gray-200 p-6 lg:p-8 shadow-lg">
           <h3 className="text-xl font-bold text-gray-900 mb-6">📱 Escanear Item</h3>
           
-          {/* Câmara (Placeholder) */}
+          {/* Câmara */}
           <div className="mb-6">
-            <div className="aspect-video bg-gray-900 rounded-xl relative overflow-hidden">
+            <div className="aspect-video bg-gray-900 rounded-xl relative overflow-hidden shadow-lg">
               {cameraActive ? (
                 <>
                   <video 
@@ -295,10 +332,10 @@ export default function ScannerPage() {
                     className="w-full h-full object-cover"
                   />
                   <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="w-48 h-48 border-4 border-blue-400 border-dashed rounded-lg flex items-center justify-center">
+                    <div className="w-48 h-48 border-4 border-emerald-400 border-dashed rounded-lg flex items-center justify-center animate-pulse">
                       <div className="text-center text-white">
                         <div className="text-4xl mb-2">📱</div>
-                        <p className="text-sm">Posicione o QR Code aqui</p>
+                        <p className="text-sm font-medium">Posicione o QR Code aqui</p>
                       </div>
                     </div>
                   </div>
@@ -323,7 +360,7 @@ export default function ScannerPage() {
                         onClick={simulateQRScan}
                         variant="secondary"
                       >
-                        🎯 Teste (Demo)
+                        🎯 Demo (Teste)
                       </Button>
                     </div>
                   </div>
@@ -337,7 +374,7 @@ export default function ScannerPage() {
                   onClick={simulateQRScan}
                   variant="primary"
                 >
-                  📱 Simular Leitura
+                  📱 Simular Leitura QR
                 </Button>
                 <Button
                   onClick={stopCamera}
@@ -381,16 +418,16 @@ export default function ScannerPage() {
 
           {/* Error Message */}
           {error && (
-            <div className="mt-4 bg-red-50 border-4 border-red-200 text-red-800 px-6 py-4 rounded-xl">
+            <div className="mt-4 bg-red-50 border-4 border-red-200 text-red-800 px-6 py-4 rounded-xl shadow-lg">
               <div className="flex items-center space-x-2">
                 <span className="text-2xl">❌</span>
-                <span className="font-bold">{error}</span>
+                <span className="font-bold text-lg">{error}</span>
               </div>
             </div>
           )}
         </div>
 
-        {/* Item Escaneado */}
+        {/* Loading State */}
         {loading && (
           <div className="bg-white rounded-xl border-4 border-gray-200 p-8 shadow-lg">
             <div className="text-center">
@@ -399,11 +436,12 @@ export default function ScannerPage() {
           </div>
         )}
 
+        {/* Item Escaneado */}
         {scannedItem && !loading && (
           <div className="bg-white rounded-xl border-4 border-green-200 p-6 lg:p-8 shadow-lg">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-xl font-bold text-gray-900">✅ Item Encontrado</h3>
-              <StatusBadge status={getStatusColor(scannedItem.status)} size="lg">
+              <StatusBadge status={getStatusColor(scannedItem.status)}>
                 {scannedItem.status.toUpperCase()}
               </StatusBadge>
             </div>
@@ -482,14 +520,17 @@ export default function ScannerPage() {
                   </Button>
                 )}
                 
-                <Link href={`/qr/item/${scannedItem.codigo}`}>
+                <Link href={`/qr/item/${scannedItem.codigo}`} target="_blank">
                   <Button variant="secondary">
                     🔍 Ver Rastreamento Completo
                   </Button>
                 </Link>
                 
                 <Button
-                  onClick={() => setScannedItem(null)}
+                  onClick={() => {
+                    setScannedItem(null);
+                    setError('');
+                  }}
                   variant="secondary"
                 >
                   🔄 Escanear Outro Item
@@ -509,9 +550,9 @@ export default function ScannerPage() {
                   setScanHistory([]);
                   localStorage.removeItem('scanner-history');
                 }}
-                className="text-red-600 hover:text-red-700 text-sm font-medium"
+                className="text-red-600 hover:text-red-700 text-sm font-medium transition-colors"
               >
-                🗑️ Limpar
+                🗑️ Limpar Histórico
               </button>
             </div>
             
@@ -520,16 +561,24 @@ export default function ScannerPage() {
                 <button
                   key={item._id}
                   onClick={() => buscarItem(item.codigo)}
-                  className="text-left p-4 border border-gray-200 rounded-lg hover:border-blue-400 hover:bg-blue-50 transition-colors"
+                  className="text-left p-4 border-2 border-gray-200 rounded-xl hover:border-emerald-400 hover:bg-emerald-50 transition-all duration-200 shadow-sm hover:shadow-md"
                 >
-                  <div className="font-mono font-bold text-blue-600 mb-1">
+                  <div className="font-mono font-bold text-emerald-600 mb-2">
                     {item.codigo}
                   </div>
-                  <div className="text-gray-900 font-medium">
+                  <div className="text-gray-900 font-medium mb-1">
                     {item.projeto.nomeHotel}
                   </div>
-                  <div className="text-sm text-gray-600">
+                  <div className="text-sm text-gray-600 mb-2">
                     {item.ambiente} • {item.tipo}
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <StatusBadge status={getStatusColor(item.status)} size="sm">
+                      {item.status}
+                    </StatusBadge>
+                    <div className="text-xs text-gray-500">
+                      {item.projeto.cidade}
+                    </div>
                   </div>
                 </button>
               ))}
@@ -537,8 +586,8 @@ export default function ScannerPage() {
           </div>
         )}
 
-        {/* Dicas */}
-        <div className="bg-blue-50 border-4 border-blue-200 rounded-xl p-6">
+        {/* Dicas de Uso */}
+        <div className="bg-blue-50 border-4 border-blue-200 rounded-xl p-6 lg:p-8 shadow-lg">
           <div className="flex items-start space-x-3">
             <svg className="w-6 h-6 text-blue-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -546,15 +595,35 @@ export default function ScannerPage() {
             <div>
               <h4 className="text-blue-900 font-semibold mb-2">💡 Como usar o Scanner</h4>
               <ul className="text-blue-800 text-sm space-y-1">
-                <li>• <strong>Câmara:</strong> Posicione o QR Code dentro do quadrado</li>
-                <li>• <strong>Manual:</strong> Digite o código completo do item</li>
-                <li>• <strong>Histórico:</strong> Clique em itens recentes para recarregá-los</li>
-                <li>• <strong>Ações:</strong> As ações disponíveis dependem do seu role</li>
-                <li>• <strong>Rastreamento:</strong> Use "Ver Rastreamento" para informações detalhadas</li>
+                <li>• <strong>Câmara:</strong> Posicione o QR Code dentro do quadrado tracejado</li>
+                <li>• <strong>Manual:</strong> Digite o código completo do item (ex: LIS-0315-01-TRK)</li>
+                <li>• <strong>Demo:</strong> Use "Demo (Teste)" para simular a leitura de um QR</li>
+                <li>• <strong>Histórico:</strong> Clique em itens recentes para recarregá-los rapidamente</li>
+                <li>• <strong>Ações:</strong> As ações disponíveis dependem do seu role no sistema</li>
+                <li>• <strong>Rastreamento:</strong> Use "Ver Rastreamento" para informações completas</li>
               </ul>
             </div>
           </div>
         </div>
+
+        {/* Footer do Sistema - Seguindo padrão EXATO */}
+        <footer className="bg-white rounded-xl border-4 border-gray-200 p-6 lg:p-8 shadow-lg">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex flex-col sm:flex-row items-center space-y-2 sm:space-y-0 sm:space-x-4">
+              <div className="flex items-center space-x-3">
+                <div className="w-4 h-4 bg-green-500 rounded-full animate-pulse"></div>
+                <span className="text-gray-900 font-bold text-lg">Scanner QR Operacional</span>
+              </div>
+              <div className="hidden sm:block text-gray-400">•</div>
+              <span className="text-gray-600 text-lg font-semibold">
+                Sistema de Leitura Ativo
+              </span>
+            </div>
+            <div className="text-gray-600 text-lg font-semibold bg-gray-50 px-4 py-2 rounded-lg border-2 border-gray-200">
+              Última atualização: {new Date().toLocaleTimeString('pt-PT')}
+            </div>
+          </div>
+        </footer>
       </div>
     </div>
   );

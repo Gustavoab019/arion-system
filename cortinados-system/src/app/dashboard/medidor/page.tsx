@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
-import { StatusBadge, Button, Loading } from '@/components/ui/DesignSystem';
 
 interface Projeto {
   _id: string;
@@ -10,6 +9,7 @@ interface Projeto {
   nomeHotel: string;
   cidade: string;
   status: string;
+  totalItensPendentes: number;
 }
 
 interface Item {
@@ -19,9 +19,12 @@ interface Item {
   ambiente: string;
   status: string;
   projeto: {
+    id?: string;
     codigo: string;
     nomeHotel: string;
+    cidade: string;
   };
+  matchType?: 'codigo' | 'ambiente';
 }
 
 interface FormData {
@@ -32,12 +35,36 @@ interface FormData {
   observacoes: string;
 }
 
+interface Stats {
+  medicoes: {
+    hoje: number;
+    estaSemana: number;
+    esteMes: number;
+  };
+  metas: {
+    diaria: number;
+    semanal: number;
+    mensal: number;
+  };
+  percentuais: {
+    diario: number;
+    semanal: number;
+    mensal: number;
+  };
+  historicoRecente: any[];
+}
+
 export default function MedidorDashboard() {
   const { data: session } = useSession();
   const [projetos, setProjetos] = useState<Projeto[]>([]);
   const [itensPendentes, setItensPendentes] = useState<Item[]>([]);
+  const [resultadosBusca, setResultadosBusca] = useState<Item[]>([]);
+  const [stats, setStats] = useState<Stats | null>(null);
   const [projetoSelecionado, setProjetoSelecionado] = useState('');
   const [itemSelecionado, setItemSelecionado] = useState('');
+  const [termoBusca, setTermoBusca] = useState('');
+  const [modoBusca, setModoBusca] = useState(false);
+  
   const [formData, setFormData] = useState<FormData>({
     itemId: '',
     largura: '',
@@ -45,37 +72,58 @@ export default function MedidorDashboard() {
     profundidade: '',
     observacoes: ''
   });
+  
   const [loading, setLoading] = useState(false);
-  const [loadingProjetos, setLoadingProjetos] = useState(true);
+  const [loadingDados, setLoadingDados] = useState(true);
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
   const [showForm, setShowForm] = useState(false);
 
-  // Carregar projetos ativos
+  // Carregar dados iniciais
   useEffect(() => {
-    carregarProjetos();
+    carregarDadosIniciais();
   }, []);
 
-  // Carregar itens quando projeto for selecionado
+  // Busca em tempo real
   useEffect(() => {
-    if (projetoSelecionado) {
-      carregarItensPendentes(projetoSelecionado);
+    if (termoBusca.length >= 2) {
+      const timer = setTimeout(() => {
+        realizarBusca();
+      }, 500);
+      return () => clearTimeout(timer);
+    } else {
+      setResultadosBusca([]);
+      setModoBusca(false);
     }
-  }, [projetoSelecionado]);
+  }, [termoBusca]);
 
-  const carregarProjetos = async () => {
+  const carregarDadosIniciais = async () => {
     try {
-      setLoadingProjetos(true);
-      const response = await fetch('/api/projects?status=medicao');
-      const data = await response.json();
+      setLoadingDados(true);
       
-      if (data.success) {
-        setProjetos(data.data || []);
+      const [projetosRes, statsRes] = await Promise.all([
+        fetch('/api/projects/com-pendentes'),
+        fetch('/api/medidor/stats')
+      ]);
+
+      if (projetosRes.ok) {
+        const projetosData = await projetosRes.json();
+        if (projetosData.success) {
+          setProjetos(projetosData.data || []);
+        }
       }
+
+      if (statsRes.ok) {
+        const statsData = await statsRes.json();
+        if (statsData.success) {
+          setStats(statsData.data);
+        }
+      }
+      
     } catch (error) {
-      console.error('Erro ao carregar projetos:', error);
+      console.error('Erro ao carregar dados iniciais:', error);
     } finally {
-      setLoadingProjetos(false);
+      setLoadingDados(false);
     }
   };
 
@@ -92,20 +140,55 @@ export default function MedidorDashboard() {
     }
   };
 
+  const realizarBusca = async () => {
+    try {
+      const response = await fetch(`/api/items/buscar?q=${encodeURIComponent(termoBusca)}`);
+      const data = await response.json();
+      
+      if (data.success) {
+        setResultadosBusca(data.data || []);
+        setModoBusca(true);
+      }
+    } catch (error) {
+      console.error('Erro na busca:', error);
+    }
+  };
+
   const handleProjetoChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const valor = e.target.value;
     setProjetoSelecionado(valor);
     setItemSelecionado('');
     setShowForm(false);
+    setModoBusca(false);
+    setTermoBusca('');
     resetForm();
+    
+    if (valor) {
+      carregarItensPendentes(valor);
+    }
   };
 
-  const handleItemSelect = (itemId: string) => {
-    setItemSelecionado(itemId);
-    setFormData({ ...formData, itemId });
+  const handleItemSelect = (item: Item) => {
+    setItemSelecionado(item._id);
+    setFormData({ ...formData, itemId: item._id });
     setShowForm(true);
     setError('');
     setSuccess('');
+    
+    if (modoBusca && item.projeto.id) {
+      setProjetoSelecionado(item.projeto.id);
+      carregarItensPendentes(item.projeto.id);
+    }
+  };
+
+  const handleBuscaChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const valor = e.target.value;
+    setTermoBusca(valor);
+    
+    if (valor.length < 2) {
+      setModoBusca(false);
+      setResultadosBusca([]);
+    }
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -152,17 +235,17 @@ export default function MedidorDashboard() {
       const data = await response.json();
 
       if (data.success) {
-        setSuccess(`✅ Medidas registradas com sucesso para ${data.data.item.codigo}`);
+        setSuccess(`Medidas registradas com sucesso para ${data.data.item.codigo}`);
         
-        // Remover item da lista de pendentes
         setItensPendentes(prev => prev.filter(item => item._id !== formData.itemId));
+        setResultadosBusca(prev => prev.filter(item => item._id !== formData.itemId));
         
-        // Reset form
         resetForm();
         setShowForm(false);
         setItemSelecionado('');
         
-        // Se não há mais itens pendentes, recarregar lista
+        carregarDadosIniciais();
+        
         if (itensPendentes.length === 1) {
           carregarItensPendentes(projetoSelecionado);
         }
@@ -177,164 +260,188 @@ export default function MedidorDashboard() {
     }
   };
 
-  const itemAtual = itensPendentes.find(item => item._id === itemSelecionado);
+  const itemAtual = [...itensPendentes, ...resultadosBusca].find(item => item._id === itemSelecionado);
+  const itensParaExibir = modoBusca ? resultadosBusca : itensPendentes;
 
-  if (loadingProjetos) {
+  if (loadingDados) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <Loading size="lg" text="Carregando projetos..." />
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-sky-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <h3 className="text-slate-900 font-semibold text-xl mb-2">Carregando Projetos</h3>
+          <p className="text-slate-600">Preparando sistema de medição...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header seguindo padrão do dashboard principal */}
-      <header className="bg-white border-b-4 border-gray-200 shadow-md">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col sm:flex-row items-center justify-between py-4 gap-4">
-            <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-4">
-                <div className="w-12 h-12 bg-blue-700 rounded-xl flex items-center justify-center text-white text-lg font-bold shadow-lg">
-                  📐
-                </div>
-                <div className="text-center sm:text-left">
-                  <h1 className="text-2xl lg:text-3xl font-bold text-gray-900">
-                    Centro de Medição
-                  </h1>
-                  <p className="text-gray-600 text-base lg:text-lg">
-                    Gestão de Medidas e Levantamentos
-                  </p>
-                </div>
-              </div>
-            </div>
-            
-            <div className="flex items-center space-x-4 bg-gray-50 rounded-xl p-4 border-2 border-gray-200">
-              <div className="text-center sm:text-right">
-                <div className="text-gray-900 font-bold text-lg">{session?.user?.name}</div>
-                <div className="text-gray-600 text-base">
-                  {(session?.user as any)?.empresa || 'Cortinados Portugal'}
-                </div>
-              </div>
-              <div className="w-12 h-12 bg-gray-300 rounded-full flex items-center justify-center border-2 border-gray-400">
-                <span className="text-gray-700 text-lg font-bold">
-                  {session?.user?.name?.charAt(0).toUpperCase()}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-8 space-y-8">
-        
-        {/* Painel Principal - Seguindo padrão */}
-        <div className="bg-blue-50 border-4 border-blue-300 rounded-2xl p-8 lg:p-10 shadow-lg">
-          <div className="flex flex-col lg:flex-row items-center justify-between gap-6">
-            <div className="flex flex-col sm:flex-row items-center space-y-4 sm:space-y-0 sm:space-x-6 text-center sm:text-left">
-              <div className="w-20 h-20 lg:w-24 lg:h-24 bg-blue-700 rounded-2xl flex items-center justify-center text-white text-3xl lg:text-4xl shadow-lg">
-                📐
-              </div>
-              <div>
-                <h2 className="text-2xl lg:text-4xl font-bold text-gray-900 mb-2">
-                  Central de Medição
-                </h2>
-                <p className="text-gray-700 mb-4 text-lg lg:text-xl">
-                  Sistema de Registro de Medidas
-                </p>
-                <p className="text-gray-600 mb-6 text-base lg:text-lg">
-                  Registre medidas precisas para produção
-                </p>
-              </div>
-            </div>
-            <div className="bg-white rounded-xl p-6 border-2 border-gray-200 shadow-md">
-              <div className="text-center">
-                <div className="text-2xl lg:text-3xl font-bold text-gray-900 mb-2">
-                  {new Date().toLocaleDateString('pt-PT', { 
-                    weekday: 'long',
-                    day: 'numeric',
-                    month: 'long'
-                  })}
-                </div>
-                <div className="text-gray-600 text-xl lg:text-2xl font-semibold">
-                  {new Date().toLocaleTimeString('pt-PT', { 
-                    hour: '2-digit',
-                    minute: '2-digit'
-                  })}
-                </div>
-              </div>
+    <div className="min-h-screen bg-slate-50">
+      <div className="max-w-7xl mx-auto px-4 py-6">
+        {/* Header */}
+        <div className="mb-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl md:text-3xl font-bold text-slate-900">Medição Inteligente</h1>
+              <p className="text-slate-600 mt-1">Sistema inteligente de medição por ambiente</p>
             </div>
           </div>
         </div>
 
-        {/* Seleção de Projeto */}
-        <div className="bg-white rounded-xl border-4 border-gray-200 p-6 lg:p-8 shadow-lg">
-          <h3 className="text-xl font-bold text-gray-900 mb-4">Selecionar Projeto</h3>
-          <select
-            value={projetoSelecionado}
-            onChange={handleProjetoChange}
-            className="w-full bg-white border-2 border-gray-300 text-gray-900 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
-          >
-            <option value="">Selecione um projeto ativo...</option>
-            {projetos.map((projeto) => (
-              <option key={projeto._id} value={projeto._id}>
-                {projeto.codigo} - {projeto.nomeHotel} ({projeto.cidade})
-              </option>
-            ))}
-          </select>
+        {/* Stats Cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
+          <div className="bg-white border border-slate-200 rounded-lg p-4">
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+              Projetos
+            </div>
+            <div className="text-2xl font-bold text-slate-900">{projetos.length}</div>
+          </div>
+
+          <div className="bg-white border border-slate-200 rounded-lg p-4">
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+              Pendentes
+            </div>
+            <div className="text-2xl font-bold text-yellow-600">
+              {modoBusca ? resultadosBusca.length : itensPendentes.length}
+            </div>
+          </div>
+
+          <div className="bg-white border border-slate-200 rounded-lg p-4">
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+              Hoje
+            </div>
+            <div className="text-2xl font-bold text-green-600">{stats?.medicoes.hoje || 0}</div>
+          </div>
+
+          <div className="bg-white border border-slate-200 rounded-lg p-4">
+            <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
+              Progresso
+            </div>
+            <div className="text-2xl font-bold text-sky-600">{stats?.percentuais.diario || 0}%</div>
+          </div>
         </div>
 
-        {/* Lista de Itens Pendentes */}
-        {projetoSelecionado && (
-          <div className="bg-white rounded-xl border-4 border-gray-200 p-6 lg:p-8 shadow-lg">
+        {/* Busca Rápida */}
+        <div className="bg-white border border-slate-200 rounded-xl p-6 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-slate-900">Busca Rápida</h3>
+            <div className="text-sm text-slate-600">
+              Digite código ou ambiente do item
+            </div>
+          </div>
+          
+          <div className="relative">
+            <input
+              type="text"
+              value={termoBusca}
+              onChange={handleBuscaChange}
+              placeholder="Ex: LIS-0001-01-TRK ou Quarto 101..."
+              className="w-full px-3 py-2 border border-slate-300 text-slate-900 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
+            />
+            <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
+              <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </div>
+          </div>
+          
+          {termoBusca.length > 0 && termoBusca.length < 2 && (
+            <div className="mt-2 text-slate-500 text-sm">
+              Digite pelo menos 2 caracteres para buscar
+            </div>
+          )}
+        </div>
+
+        {/* Seleção de Projeto (se não estiver buscando) */}
+        {!modoBusca && (
+          <div className="bg-white border border-slate-200 rounded-xl p-6 mb-6">
+            <h3 className="font-semibold text-slate-900 mb-4">Selecionar Projeto</h3>
+            <select
+              value={projetoSelecionado}
+              onChange={handleProjetoChange}
+              className="w-full px-3 py-2 border border-slate-300 text-slate-900 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
+            >
+              <option value="">Selecione um projeto com itens pendentes...</option>
+              {projetos.map((projeto) => (
+                <option key={projeto._id} value={projeto._id}>
+                  {projeto.codigo} - {projeto.nomeHotel} ({projeto.cidade}) - {projeto.totalItensPendentes} pendentes
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* Lista de Itens */}
+        {(itensParaExibir.length > 0 || (projetoSelecionado && !modoBusca)) && (
+          <div className="bg-white border border-slate-200 rounded-xl p-6 mb-6">
             <div className="flex items-center justify-between mb-6">
-              <h3 className="text-xl font-bold text-gray-900">
-                Itens Pendentes de Medição
+              <h3 className="font-semibold text-slate-900">
+                {modoBusca ? 'Resultados da Busca' : 'Itens Pendentes de Medição'}
               </h3>
-              <div className="text-lg font-semibold text-gray-600">
-                {itensPendentes.length} item(ns) aguardando
+              <div className="text-sm text-slate-600">
+                {itensParaExibir.length} item(ns) {modoBusca ? 'encontrado(s)' : 'aguardando'}
               </div>
             </div>
 
-            {itensPendentes.length === 0 ? (
+            {itensParaExibir.length === 0 ? (
               <div className="text-center py-12">
-                <div className="text-6xl mb-4">✅</div>
-                <h3 className="text-2xl font-bold text-gray-900 mb-4">
-                  Todos os itens foram medidos!
+                <div className="text-slate-400 mb-4">
+                  <svg className="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                  </svg>
+                </div>
+                <h3 className="text-slate-900 font-semibold mb-2">
+                  {modoBusca ? 'Nenhum item encontrado!' : 'Todos os itens foram medidos!'}
                 </h3>
-                <p className="text-gray-600 text-lg">
-                  Este projeto está pronto para produção.
+                <p className="text-slate-600">
+                  {modoBusca 
+                    ? 'Tente um termo diferente ou selecione um projeto.'
+                    : 'Este projeto está pronto para produção.'
+                  }
                 </p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {itensPendentes.map((item) => (
+              <div className="space-y-3">
+                {itensParaExibir.map((item) => (
                   <button
                     key={item._id}
-                    onClick={() => handleItemSelect(item._id)}
-                    className={`text-left p-6 border-4 rounded-xl transition-all duration-300 transform hover:scale-105 shadow-lg ${
+                    onClick={() => handleItemSelect(item)}
+                    className={`w-full text-left p-4 border border-slate-200 rounded-lg transition-colors hover:bg-slate-50 ${
                       itemSelecionado === item._id
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-200 hover:border-blue-400 bg-white hover:shadow-xl'
+                        ? 'border-sky-300 bg-sky-50'
+                        : ''
                     }`}
                   >
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="font-mono text-blue-600 text-lg font-bold">
-                        {item.codigo}
-                      </span>
-                      <span className={`px-3 py-1 rounded-full text-sm font-bold ${
-                        item.tipo === 'calha' 
-                          ? 'bg-indigo-100 text-indigo-800' 
-                          : 'bg-emerald-100 text-emerald-800'
-                      }`}>
-                        {item.tipo === 'calha' ? '🏗️ TRK' : '🪟 CRT'}
-                      </span>
-                    </div>
-                    <div className="text-gray-900 font-bold text-lg mb-2">
-                      {item.ambiente}
-                    </div>
-                    <div className="text-gray-600">
-                      {item.projeto.nomeHotel}
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-3 mb-1">
+                          <span className={`font-mono font-medium ${
+                            item.matchType === 'codigo' ? 'text-yellow-600 bg-yellow-100 px-2 py-1 rounded text-sm' : 'text-sky-600'
+                          }`}>
+                            {item.codigo}
+                          </span>
+                          <span className={`px-2 py-1 rounded text-xs font-medium ${
+                            item.tipo === 'calha' 
+                              ? 'bg-indigo-100 text-indigo-800' 
+                              : 'bg-emerald-100 text-emerald-800'
+                          }`}>
+                            {item.tipo === 'calha' ? 'TRK' : 'CRT'}
+                          </span>
+                        </div>
+                        <div className={`text-slate-900 font-medium mb-1 ${
+                          item.matchType === 'ambiente' ? 'bg-yellow-100 px-2 py-1 rounded' : ''
+                        }`}>
+                          {item.ambiente}
+                        </div>
+                        <div className="text-slate-600 text-sm">
+                          {item.projeto.nomeHotel} - {item.projeto.cidade}
+                        </div>
+                      </div>
+                      <div className="text-slate-400">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </div>
                     </div>
                   </button>
                 ))}
@@ -345,59 +452,63 @@ export default function MedidorDashboard() {
 
         {/* Formulário de Medição */}
         {showForm && itemAtual && (
-          <div className="bg-white rounded-xl border-4 border-blue-300 p-6 lg:p-8 shadow-lg">
-            <div className="flex items-center space-x-3 mb-6">
-              <div className="w-3 h-3 bg-blue-500 rounded-full animate-pulse"></div>
-              <h2 className="text-xl font-bold text-gray-900">
+          <div className="bg-white border border-slate-200 rounded-xl p-6 mb-6">
+            <div className="flex items-center space-x-2 mb-6">
+              <div className="w-2 h-2 bg-sky-500 rounded-full"></div>
+              <h2 className="font-semibold text-slate-900">
                 Registrar Medidas - {itemAtual.codigo}
               </h2>
             </div>
 
             {/* Info do Item */}
-            <div className="bg-gray-50 border-2 border-gray-200 rounded-xl p-6 mb-6">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-6">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
-                  <span className="text-gray-600 font-medium">Ambiente:</span>
-                  <div className="text-gray-900 font-bold text-lg">{itemAtual.ambiente}</div>
+                  <span className="text-slate-600 text-sm font-medium">Ambiente:</span>
+                  <div className="text-slate-900 font-medium">{itemAtual.ambiente}</div>
                 </div>
                 <div>
-                  <span className="text-gray-600 font-medium">Tipo:</span>
-                  <div className="text-gray-900 font-bold text-lg">
-                    {itemAtual.tipo === 'calha' ? '🏗️ Calha (TRK)' : '🪟 Cortina (CRT)'}
+                  <span className="text-slate-600 text-sm font-medium">Tipo:</span>
+                  <div className="text-slate-900 font-medium">
+                    {itemAtual.tipo === 'calha' ? 'Calha (TRK)' : 'Cortina (CRT)'}
                   </div>
                 </div>
                 <div>
-                  <span className="text-gray-600 font-medium">Hotel:</span>
-                  <div className="text-gray-900 font-bold text-lg">{itemAtual.projeto.nomeHotel}</div>
+                  <span className="text-slate-600 text-sm font-medium">Hotel:</span>
+                  <div className="text-slate-900 font-medium">{itemAtual.projeto.nomeHotel}</div>
+                </div>
+                <div>
+                  <span className="text-slate-600 text-sm font-medium">Cidade:</span>
+                  <div className="text-slate-900 font-medium">{itemAtual.projeto.cidade}</div>
                 </div>
               </div>
             </div>
 
             {/* Mensagens */}
             {error && (
-              <div className="bg-red-50 border-4 border-red-200 text-red-800 px-6 py-4 rounded-xl mb-6 shadow-lg">
+              <div className="bg-red-50 border border-red-200 text-red-800 px-4 py-3 rounded-lg mb-6">
                 <div className="flex items-center space-x-2">
-                  <span className="text-2xl">❌</span>
-                  <span className="font-bold text-lg">{error}</span>
+                  <span>⚠️</span>
+                  <span className="font-medium">{error}</span>
                 </div>
               </div>
             )}
             
             {success && (
-              <div className="bg-green-50 border-4 border-green-200 text-green-800 px-6 py-4 rounded-xl mb-6 shadow-lg">
+              <div className="bg-green-50 border border-green-200 text-green-800 px-4 py-3 rounded-lg mb-6">
                 <div className="flex items-center space-x-2">
-                  <span className="text-2xl">✅</span>
-                  <span className="font-bold text-lg">{success}</span>
+                  <span>✅</span>
+                  <span className="font-medium">{success}</span>
                 </div>
               </div>
             )}
 
             {/* Formulário */}
-            <form onSubmit={handleSubmit} className="space-y-6">
+            <form onSubmit={handleSubmit} className="space-y-4">
               {/* Medidas Principais */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-lg font-bold text-gray-900 mb-3">
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
                     Largura (cm) *
                   </label>
                   <input
@@ -408,13 +519,13 @@ export default function MedidorDashboard() {
                     step="0.1"
                     min="0.1"
                     required
-                    className="w-full bg-white border-2 border-gray-300 text-gray-900 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
+                    className="w-full px-3 py-2 border border-slate-300 text-slate-900 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
                     placeholder="Ex: 150.5"
                   />
                 </div>
                 
                 <div>
-                  <label className="block text-lg font-bold text-gray-900 mb-3">
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
                     Altura (cm) *
                   </label>
                   <input
@@ -425,7 +536,7 @@ export default function MedidorDashboard() {
                     step="0.1"
                     min="0.1"
                     required
-                    className="w-full bg-white border-2 border-gray-300 text-gray-900 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
+                    className="w-full px-3 py-2 border border-slate-300 text-slate-900 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
                     placeholder="Ex: 200.0"
                   />
                 </div>
@@ -433,7 +544,7 @@ export default function MedidorDashboard() {
 
               {/* Profundidade (opcional) */}
               <div>
-                <label className="block text-lg font-bold text-gray-900 mb-3">
+                <label className="block text-sm font-medium text-slate-700 mb-2">
                   Profundidade (cm) - Opcional
                 </label>
                 <input
@@ -443,14 +554,14 @@ export default function MedidorDashboard() {
                   onChange={handleInputChange}
                   step="0.1"
                   min="0"
-                  className="w-full md:w-1/2 bg-white border-2 border-gray-300 text-gray-900 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
+                  className="w-full md:w-1/2 px-3 py-2 border border-slate-300 text-slate-900 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
                   placeholder="Ex: 15.0"
                 />
               </div>
 
               {/* Observações */}
               <div>
-                <label className="block text-lg font-bold text-gray-900 mb-3">
+                <label className="block text-sm font-medium text-slate-700 mb-2">
                   Observações
                 </label>
                 <textarea
@@ -458,38 +569,47 @@ export default function MedidorDashboard() {
                   value={formData.observacoes}
                   onChange={handleInputChange}
                   rows={3}
-                  className="w-full bg-white border-2 border-gray-300 text-gray-900 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
+                  className="w-full px-3 py-2 border border-slate-300 text-slate-900 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
                   placeholder="Detalhe qualquer particularidade da medição..."
                 />
               </div>
 
               {/* Preview das Medidas */}
               {formData.largura && formData.altura && (
-                <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-6">
-                  <h4 className="text-lg font-bold text-blue-900 mb-3">📐 Preview das Medidas:</h4>
-                  <div className="text-blue-900">
-                    <span className="font-mono text-2xl font-bold text-blue-600">
+                <div className="bg-sky-50 border border-sky-200 rounded-lg p-4">
+                  <h4 className="font-medium text-sky-900 mb-2">Preview das Medidas:</h4>
+                  <div className="text-sky-900">
+                    <span className="font-mono text-lg font-medium text-sky-600">
                       {formData.largura} × {formData.altura}
                       {formData.profundidade && ` × ${formData.profundidade}`} cm
                     </span>
                   </div>
-                  <div className="text-blue-700 text-lg font-semibold mt-2">
+                  <div className="text-sky-700 font-medium mt-1">
                     Área: {(parseFloat(formData.largura || '0') * parseFloat(formData.altura || '0') / 10000).toFixed(2)} m²
                   </div>
                 </div>
               )}
 
               {/* Botões */}
-              <div className="flex flex-col sm:flex-row gap-4">
-                <Button
+              <div className="flex space-x-3">
+                <button
                   type="submit"
                   disabled={loading || !formData.largura || !formData.altura}
-                  loading={loading}
-                  variant="primary"
-                  fullWidth
+                  className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
+                    loading || !formData.largura || !formData.altura
+                      ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                      : 'bg-sky-500 hover:bg-sky-600 text-white'
+                  }`}
                 >
-                  📐 Registrar Medidas
-                </Button>
+                  {loading ? (
+                    <div className="flex items-center justify-center space-x-2">
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      <span>Salvando...</span>
+                    </div>
+                  ) : (
+                    'Registrar Medidas'
+                  )}
+                </button>
                 
                 <button
                   type="button"
@@ -498,7 +618,7 @@ export default function MedidorDashboard() {
                     setItemSelecionado('');
                     resetForm();
                   }}
-                  className="px-6 py-3 border-2 border-gray-300 text-gray-700 hover:text-gray-900 hover:border-gray-400 rounded-xl transition-colors font-bold text-lg"
+                  className="px-4 py-2 border border-slate-300 text-slate-700 hover:text-slate-900 hover:border-slate-400 rounded-lg transition-colors font-medium"
                 >
                   Cancelar
                 </button>
@@ -507,71 +627,65 @@ export default function MedidorDashboard() {
           </div>
         )}
 
-        {/* Estatísticas - Seguindo padrão do dashboard principal */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          <div className="bg-white rounded-xl border-4 border-blue-200 p-6 lg:p-8 shadow-lg hover:shadow-xl transition-all duration-200">
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-gray-700 text-base lg:text-lg font-bold">Projetos Ativos</span>
-              <div className="w-4 h-4 bg-blue-500 rounded-full"></div>
+        {/* Histórico Recente */}
+        {stats?.historicoRecente && stats.historicoRecente.length > 0 && (
+          <div className="bg-white border border-slate-200 rounded-xl p-6 mb-6">
+            <h3 className="font-semibold text-slate-900 mb-4">Últimas Medições Realizadas</h3>
+            <div className="space-y-3">
+              {stats.historicoRecente.map((item: any, index: number) => (
+                <div 
+                  key={item._id || index} 
+                  className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-200"
+                >
+                  <div className="flex items-center space-x-3">
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white text-sm font-medium ${
+                      item.tipo === 'calha' ? 'bg-indigo-500' : 'bg-emerald-500'
+                    }`}>
+                      {item.tipo === 'calha' ? 'T' : 'C'}
+                    </div>
+                    <div>
+                      <div className="font-mono font-medium text-sky-600 text-sm">
+                        {item.codigo}
+                      </div>
+                      <div className="text-slate-900 font-medium text-sm">
+                        {item.ambiente}
+                      </div>
+                      <div className="text-slate-600 text-xs">
+                        {item.projeto?.nomeHotel} - {item.projeto?.cidade}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="text-right">
+                    <div className="font-mono font-medium text-slate-900 text-sm">
+                      {item.medidas?.largura}×{item.medidas?.altura}
+                      {item.medidas?.profundidade && `×${item.medidas.profundidade}`} cm
+                    </div>
+                    <div className="text-slate-500 text-xs">
+                      {item.medicao?.dataEm ? 
+                        new Date(item.medicao.dataEm).toLocaleString('pt-PT', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        }) : 'Data não disponível'
+                      }
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
-            <div className="text-3xl lg:text-4xl font-bold text-gray-900 mb-2">
-              {projetos.length}
-            </div>
-            <div className="text-sm lg:text-base text-gray-600">Para medir</div>
-          </div>
-          
-          <div className="bg-white rounded-xl border-4 border-yellow-200 p-6 lg:p-8 shadow-lg hover:shadow-xl transition-all duration-200">
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-gray-700 text-base lg:text-lg font-bold">Pendentes</span>
-              <div className="w-4 h-4 bg-yellow-500 rounded-full"></div>
-            </div>
-            <div className="text-3xl lg:text-4xl font-bold text-gray-900 mb-2">
-              {itensPendentes.length}
-            </div>
-            <div className="text-sm lg:text-base text-gray-600">Aguardando</div>
-          </div>
-          
-          <div className="bg-white rounded-xl border-4 border-green-200 p-6 lg:p-8 shadow-lg hover:shadow-xl transition-all duration-200">
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-gray-700 text-base lg:text-lg font-bold">Status</span>
-              <div className="w-4 h-4 bg-green-500 rounded-full"></div>
-            </div>
-            <div className="text-3xl lg:text-4xl font-bold text-gray-900 mb-2">
-              {projetoSelecionado ? '✓' : '⏸'}
-            </div>
-            <div className="text-sm lg:text-base text-gray-600">Sistema</div>
-          </div>
-          
-          <div className="bg-white rounded-xl border-4 border-blue-200 p-6 lg:p-8 shadow-lg hover:shadow-xl transition-all duration-200">
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-gray-700 text-base lg:text-lg font-bold">Hora Atual</span>
-              <div className="w-4 h-4 bg-blue-500 rounded-full"></div>
-            </div>
-            <div className="text-3xl lg:text-4xl font-bold text-gray-900 mb-2">
-              {new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}
-            </div>
-            <div className="text-sm lg:text-base text-gray-600">Operacional</div>
-          </div>
-        </div>
-
-        {/* Status do Sistema - Seguindo padrão */}
-        <footer className="bg-white rounded-xl border-4 border-gray-200 p-6 lg:p-8 shadow-lg">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="flex flex-col sm:flex-row items-center space-y-2 sm:space-y-0 sm:space-x-4">
-              <div className="flex items-center space-x-3">
-                <div className="w-4 h-4 bg-green-500 rounded-full animate-pulse"></div>
-                <span className="text-gray-900 font-bold text-lg">Central de Medição Operacional</span>
-              </div>
-              <div className="hidden sm:block text-gray-400">•</div>
-              <span className="text-gray-600 text-lg font-semibold">
-                Sistema de Registro Ativo
-              </span>
-            </div>
-            <div className="text-gray-600 text-lg font-semibold bg-gray-50 px-4 py-2 rounded-lg border-2 border-gray-200">
-              Última atualização: {new Date().toLocaleTimeString('pt-PT')}
+            
+            <div className="mt-4 text-center">
+              <button 
+                onClick={() => window.open('/api/medidor/historico', '_blank')}
+                className="px-4 py-2 bg-sky-500 text-white rounded-lg hover:bg-sky-600 transition-colors font-medium text-sm"
+              >
+                Ver Histórico Completo
+              </button>
             </div>
           </div>
-        </footer>
+        )}
       </div>
     </div>
   );

@@ -7,8 +7,8 @@ export interface ProjectDocument extends Document {
   nomeHotel: string;
   endereco: string;
   cidade: string;
-  distrito: string; // Distrito português
-  codigoPostal: string; // Código postal português
+  distrito: string;
+  codigoPostal: string;
   contato: {
     nome: string;
     telefone: string;
@@ -31,6 +31,7 @@ export interface ProjectModel extends Model<ProjectDocument> {
   buscarAtivos(): Promise<ProjectDocument[]>;
   buscarPorCidade(cidade: string): Promise<ProjectDocument[]>;
   gerarProximoCodigo(): Promise<string>;
+  buscarComItensPendentes(): Promise<any[]>;
 }
 
 // Schema do projeto
@@ -92,7 +93,6 @@ const ProjectSchema = new Schema<ProjectDocument>({
       trim: true,
       validate: {
         validator: function(v: string) {
-          // Regex para telefone português (+351 ou 9 dígitos)
           return /^(\+351\s?)?[2-9]\d{8}$/.test(v.replace(/\s/g, ''));
         },
         message: 'Telefone inválido para Portugal'
@@ -152,15 +152,15 @@ const ProjectSchema = new Schema<ProjectDocument>({
   }
 });
 
-// Índices para melhor performance (removendo duplicados)
+// Índices para melhor performance
 ProjectSchema.index({ status: 1 });
 ProjectSchema.index({ cidade: 1 });
 ProjectSchema.index({ distrito: 1 });
 ProjectSchema.index({ dataInicio: -1 });
+ProjectSchema.index({ codigo: 1 });
 
 // Middleware para validação adicional
 ProjectSchema.pre('save', function(next) {
-  // Se o status for 'concluido', deve ter data de conclusão
   if (this.status === 'concluido' && !this.dataConclusao) {
     this.dataConclusao = new Date();
   }
@@ -168,7 +168,7 @@ ProjectSchema.pre('save', function(next) {
   next();
 });
 
-// Métodos estáticos
+// Métodos estáticos existentes
 ProjectSchema.statics.buscarPorCodigo = function(codigo: string) {
   return this.findOne({ codigo: codigo.toUpperCase() }).populate('criadoPor', 'nome email');
 };
@@ -190,19 +190,66 @@ ProjectSchema.statics.buscarPorCidade = function(cidade: string) {
 };
 
 ProjectSchema.statics.gerarProximoCodigo = async function(): Promise<string> {
-  // Buscar o último projeto criado para gerar próximo código
   const ultimoProjeto = await this.findOne({}, {}, { sort: { 'criadoEm': -1 } });
   
   if (!ultimoProjeto) {
-    return 'LIS-0001'; // Primeiro projeto (Lisboa)
+    return 'LIS-0001';
   }
   
-  // Extrair número do código (ex: LIS-0315 -> 315)
   const ultimoNumero = parseInt(ultimoProjeto.codigo.split('-')[1]);
   const proximoNumero = ultimoNumero + 1;
   
-  // Gerar próximo código com padding de zeros
   return `LIS-${proximoNumero.toString().padStart(4, '0')}`;
+};
+
+// Novo método para buscar projetos com itens pendentes
+ProjectSchema.statics.buscarComItensPendentes = async function() {
+  const Item = mongoose.model('Item');
+  
+  try {
+    // Primeiro busca projetos que têm itens pendentes
+    const projetosComPendentes = await Item.aggregate([
+      {
+        $match: { status: 'pendente' }
+      },
+      {
+        $group: {
+          _id: '$projeto',
+          totalPendentes: { $sum: 1 }
+        }
+      }
+    ]);
+    
+    const projetoIds = projetosComPendentes.map(p => p._id);
+    
+    if (projetoIds.length === 0) {
+      return [];
+    }
+    
+    // Busca os dados completos dos projetos
+    const projetos = await this.find({
+      _id: { $in: projetoIds },
+      status: { $nin: ['concluido', 'cancelado'] }
+    })
+    .populate('criadoPor', 'nome email')
+    .sort({ criadoEm: -1 });
+    
+    // Adiciona contador de pendentes a cada projeto
+    return projetos.map((projeto: any) => {
+      const pendentesInfo = projetosComPendentes.find(
+        p => p._id.toString() === projeto._id.toString()
+      );
+      
+      return {
+        ...projeto.toObject(),
+        totalItensPendentes: pendentesInfo?.totalPendentes || 0
+      };
+    });
+    
+  } catch (error) {
+    console.error('Erro ao buscar projetos com pendentes:', error);
+    return [];
+  }
 };
 
 // Verificar se o modelo já existe
@@ -321,5 +368,56 @@ export const ProjectUtils = {
     });
     
     return estatisticas;
+  },
+
+  // Obter projetos com seus respectivos stats de itens
+  async obterProjetosComStats() {
+    const Item = mongoose.model('Item');
+    
+    const projetos = await Project.find({ 
+      status: { $nin: ['concluido', 'cancelado'] } 
+    })
+    .populate('criadoPor', 'nome email')
+    .sort({ criadoEm: -1 });
+    
+    // Para cada projeto, buscar stats dos itens
+    const projetosComStats = await Promise.all(
+      projetos.map(async (projeto) => {
+        const statsItens = await Item.aggregate([
+          { $match: { projeto: projeto._id } },
+          {
+            $group: {
+              _id: '$status',
+              count: { $sum: 1 }
+            }
+          }
+        ]);
+        
+        const stats = {
+          total: 0,
+          pendente: 0,
+          medido: 0,
+          producao: 0,
+          produzido: 0,
+          logistica: 0,
+          instalado: 0,
+          cancelado: 0
+        };
+        
+        statsItens.forEach(stat => {
+          if (stat._id in stats) {
+            stats[stat._id as keyof typeof stats] = stat.count;
+            stats.total += stat.count;
+          }
+        });
+        
+        return {
+          ...projeto.toObject(),
+          statsItens: stats
+        };
+      })
+    );
+    
+    return projetosComStats;
   }
 };

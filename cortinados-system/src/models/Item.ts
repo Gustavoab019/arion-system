@@ -54,6 +54,10 @@ export interface ItemModel extends Model<ItemDocument> {
   buscarPorStatus(status: StatusItem): Promise<ItemDocument[]>;
   buscarPorTipo(tipo: TipoItem): Promise<ItemDocument[]>;
   gerarCodigoItem(projetoId: string, tipo: TipoItem): Promise<string>;
+  buscarPendentesPorRegiao(cidade?: string): Promise<ItemDocument[]>;
+  buscarPorCodigoParcial(codigoParcial: string): Promise<ItemDocument[]>;
+  historicoMedidor(medidorId: string, limit?: number, skip?: number): Promise<ItemDocument[]>;
+  estatisticasPorMedidor(medidorId: string, dataInicio?: Date, dataFim?: Date): Promise<any[]>;
 }
 
 // Sub-schema para medidas
@@ -208,21 +212,20 @@ const ItemSchema = new Schema<ItemDocument>({
   }
 });
 
-// Índices para melhor performance (removendo duplicados)
+// Índices para melhor performance
 ItemSchema.index({ projeto: 1 });
 ItemSchema.index({ status: 1 });
 ItemSchema.index({ tipo: 1 });
-ItemSchema.index({ 'qrCode': 1 });
+ItemSchema.index({ codigo: 1 });
+ItemSchema.index({ 'medicao.medidoPor': 1 });
 
 // Middleware para gerar QR Code antes de salvar
 ItemSchema.pre('save', async function(next) {
   if (this.isNew || this.isModified('codigo')) {
     try {
-      // URL base do QR code a partir das variáveis de ambiente
       const baseUrl = process.env.QR_BASE_URL || 'http://localhost:3000/track';
       this.qrCodeUrl = `${baseUrl}/${this.codigo}`;
       
-      // Gerar string do QR code
       this.qrCode = await QRCode.toString(this.qrCodeUrl, {
         type: 'svg',
         width: 200,
@@ -238,10 +241,10 @@ ItemSchema.pre('save', async function(next) {
   next();
 });
 
-// Métodos estáticos
+// Métodos estáticos existentes
 ItemSchema.statics.buscarPorCodigo = function(codigo: string) {
   return this.findOne({ codigo: codigo.toUpperCase() })
-    .populate('projeto', 'codigo nomeHotel')
+    .populate('projeto', 'codigo nomeHotel cidade')
     .populate('medicao.medidoPor', 'nome role')
     .populate('producao.produzidoPor', 'nome role')
     .populate('logistica.processadoPor', 'nome role')
@@ -250,6 +253,7 @@ ItemSchema.statics.buscarPorCodigo = function(codigo: string) {
 
 ItemSchema.statics.buscarPorProjeto = function(projetoId: string) {
   return this.find({ projeto: projetoId })
+    .populate('projeto', 'codigo nomeHotel cidade')
     .populate('medicao.medidoPor', 'nome role')
     .populate('producao.produzidoPor', 'nome role')
     .populate('logistica.processadoPor', 'nome role')
@@ -259,18 +263,17 @@ ItemSchema.statics.buscarPorProjeto = function(projetoId: string) {
 
 ItemSchema.statics.buscarPorStatus = function(status: StatusItem) {
   return this.find({ status })
-    .populate('projeto', 'codigo nomeHotel')
+    .populate('projeto', 'codigo nomeHotel cidade')
     .sort({ criadoEm: -1 });
 };
 
 ItemSchema.statics.buscarPorTipo = function(tipo: TipoItem) {
   return this.find({ tipo })
-    .populate('projeto', 'codigo nomeHotel')
+    .populate('projeto', 'codigo nomeHotel cidade')
     .sort({ criadoEm: -1 });
 };
 
 ItemSchema.statics.gerarCodigoItem = async function(projetoId: string, tipo: TipoItem): Promise<string> {
-  // Buscar o projeto para pegar o código
   const Project = mongoose.model('Project');
   const projeto = await Project.findById(projetoId);
   
@@ -278,15 +281,100 @@ ItemSchema.statics.gerarCodigoItem = async function(projetoId: string, tipo: Tip
     throw new Error('Projeto não encontrado');
   }
   
-  // Buscar quantos itens já existem neste projeto
   const countItens = await this.countDocuments({ projeto: projetoId });
   const proximoNumero = countItens + 1;
   
-  // Definir sufixo baseado no tipo
   const sufixo = tipo === 'calha' ? 'TRK' : 'CRT';
   
-  // Gerar código: LIS-0315-01-TRK
   return `${projeto.codigo}-${proximoNumero.toString().padStart(2, '0')}-${sufixo}`;
+};
+
+// Novos métodos estáticos para o medidor
+ItemSchema.statics.buscarPendentesPorRegiao = function(cidade?: string) {
+  const query: any = { status: 'pendente' };
+  
+  if (cidade) {
+    return this.find(query)
+      .populate({
+        path: 'projeto',
+        match: { cidade: new RegExp(cidade, 'i') },
+        select: 'codigo nomeHotel cidade'
+      })
+      .sort({ criadoEm: 1 });
+  }
+  
+  return this.find(query)
+    .populate('projeto', 'codigo nomeHotel cidade')
+    .sort({ criadoEm: 1 });
+};
+
+ItemSchema.statics.buscarPorCodigoParcial = function(codigoParcial: string) {
+  return this.find({ 
+    codigo: new RegExp(codigoParcial.toUpperCase(), 'i'),
+    status: 'pendente'
+  })
+  .populate('projeto', 'codigo nomeHotel cidade')
+  .limit(10)
+  .sort({ codigo: 1 });
+};
+
+ItemSchema.statics.historicoMedidor = function(medidorId: string, limit = 20, skip = 0) {
+  return this.find({
+    'medicao.medidoPor': medidorId
+  })
+  .populate('projeto', 'codigo nomeHotel cidade')
+  .select('codigo tipo ambiente medidas medicao status')
+  .sort({ 'medicao.dataEm': -1 })
+  .skip(skip)
+  .limit(limit);
+};
+
+ItemSchema.statics.estatisticasPorMedidor = function(medidorId: string, dataInicio?: Date, dataFim?: Date) {
+  const matchQuery: any = {
+    'medicao.medidoPor': new mongoose.Types.ObjectId(medidorId)
+  };
+  
+  if (dataInicio || dataFim) {
+    matchQuery['medicao.dataEm'] = {};
+    if (dataInicio) matchQuery['medicao.dataEm'].$gte = dataInicio;
+    if (dataFim) matchQuery['medicao.dataEm'].$lte = dataFim;
+  }
+  
+  return this.aggregate([
+    { $match: matchQuery },
+    {
+      $group: {
+        _id: {
+          tipo: '$tipo',
+          data: { $dateToString: { format: '%Y-%m-%d', date: '$medicao.dataEm' } }
+        },
+        quantidade: { $sum: 1 },
+        tempoMedio: { 
+          $avg: { 
+            $subtract: ['$medicao.dataEm', '$criadoEm'] 
+          }
+        }
+      }
+    },
+    {
+      $group: {
+        _id: null,
+        totalMedicoes: { $sum: '$quantidade' },
+        porTipo: {
+          $push: {
+            tipo: '$_id.tipo',
+            quantidade: '$quantidade'
+          }
+        },
+        porDia: {
+          $push: {
+            data: '$_id.data',
+            quantidade: '$quantidade'
+          }
+        }
+      }
+    }
+  ]);
 };
 
 // Verificar se o modelo já existe
@@ -340,7 +428,6 @@ export const ItemUtils = {
     const agora = new Date();
     const userObjectId = new mongoose.Types.ObjectId(userId);
     
-    // Adicionar ao histórico baseado no status
     switch (novoStatus) {
       case 'producao':
         updateData.producao = {
@@ -401,7 +488,7 @@ export const ItemUtils = {
     }
     
     return await Item.find(query)
-      .populate('projeto', 'codigo nomeHotel')
+      .populate('projeto', 'codigo nomeHotel cidade')
       .sort({ criadoEm: -1 });
   },
 
@@ -444,12 +531,85 @@ export const ItemUtils = {
       throw new Error('Item não encontrado');
     }
     
-    // Gerar QR code como PNG base64
     const qrCodePNG = await QRCode.toDataURL(item.qrCodeUrl, {
       width: 300,
       margin: 2
     });
     
     return qrCodePNG;
+  },
+
+  // Busca inteligente
+  async buscarInteligente(termo: string, limite = 10) {
+    // Busca por código exato primeiro
+    let resultados = await Item.find({
+      codigo: termo.toUpperCase(),
+      status: 'pendente'
+    })
+    .populate('projeto', 'codigo nomeHotel cidade')
+    .limit(limite);
+    
+    // Se não encontrou por código, busca por código parcial
+    if (resultados.length === 0) {
+      resultados = await Item.buscarPorCodigoParcial(termo);
+    }
+    
+    // Se ainda não encontrou, busca por ambiente
+    if (resultados.length === 0) {
+      resultados = await Item.find({
+        ambiente: new RegExp(termo, 'i'),
+        status: 'pendente'
+      })
+      .populate('projeto', 'codigo nomeHotel cidade')
+      .limit(limite);
+    }
+    
+    return resultados;
+  },
+
+  // Dashboard stats para medidor
+  async obterStatsMedidor(medidorId: string) {
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+    
+    const estaSemana = new Date(hoje);
+    estaSemana.setDate(hoje.getDate() - hoje.getDay());
+    
+    const esteMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+    
+    const [statsHoje, statsEstaSemana, statsEsteMes, historicoRecente] = await Promise.all([
+      // Hoje
+      Item.countDocuments({
+        'medicao.medidoPor': medidorId,
+        'medicao.dataEm': { $gte: hoje }
+      }),
+      
+      // Esta semana
+      Item.countDocuments({
+        'medicao.medidoPor': medidorId,
+        'medicao.dataEm': { $gte: estaSemana }
+      }),
+      
+      // Este mês
+      Item.countDocuments({
+        'medicao.medidoPor': medidorId,
+        'medicao.dataEm': { $gte: esteMes }
+      }),
+      
+      // Histórico recente
+      Item.historicoMedidor(medidorId, 5, 0)
+    ]);
+    
+    return {
+      hoje: statsHoje,
+      estaSemana: statsEstaSemana,
+      esteMes: statsEsteMes,
+      historicoRecente,
+      meta: {
+        diaria: 20,
+        semanal: 100,
+        mensal: 400
+      }
+    };
   }
 };
